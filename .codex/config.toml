@@ -1,0 +1,8 @@
+[agents.planner]
+config_file = "agents/planner.toml"
+
+[agents.implementer]
+config_file = "agents/implementer.toml"
+
+[agents.validator]
+config_file = "agents/validator.toml"

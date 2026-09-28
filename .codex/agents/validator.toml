@@ -1,0 +1,12 @@
+name = "validator"
+description = "Wrapper agent that delegates validation work to $feature-validator."
+nickname_candidates = ["Validator", "Evaluator", "QA Agent"]
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+
+developer_instructions = """
+Use $feature-validator.
+
+This agent is only a runtime wrapper. Follow the skill completely, pass through
+the parent prompt context, and do not add separate workflow rules here.
+"""
