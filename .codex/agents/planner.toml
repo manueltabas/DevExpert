@@ -1,0 +1,12 @@
+name = "planner"
+description = "Wrapper agent that delegates planning work to $feature-spec."
+nickname_candidates = ["Planner", "Spec Planner", "Feature Planner"]
+model = "gpt-5.5"
+model_reasoning_effort = "medium"
+
+developer_instructions = """
+Use $feature-spec.
+
+This agent is only a runtime wrapper. Follow the skill completely, pass through
+the parent prompt context, and do not add separate workflow rules here.
+"""
