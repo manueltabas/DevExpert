@@ -13,7 +13,7 @@ Build a responsive board-game scorekeeper for one scorekeeper, up to 20 players,
 
 ## Start and verify
 
-Confirm the repository with `pwd`, inspect `git status`, then run `./init.sh` (or `CI=true ./init.sh`). It currently reports pre-bootstrap readiness only; there is no runnable app or product test command yet. The first feature must establish documented local-server/test commands and make `init.sh` execute the real checks, fail on errors, and exit without starting a long-running server.
+Confirm the repository with `pwd`, inspect `git status`, then run `./init.sh` (or `CI=true ./init.sh`). The gate runs the real baseline checks and exits without starting a long-running server. Use `npm run dev` separately when you need the local HTTP app.
 
 ## Feature workflow
 
