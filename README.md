@@ -23,8 +23,22 @@ The local `feature-flow` skill is adapted for one feature per pull request.
 
 `passing` means implementation checks passed. `accepted` means independent validation passed; merge state is tracked separately by GitHub.
 
+## App commands
+
+The product is a static HTML/CSS/JavaScript app. No dependency installation is
+required for the current bootstrap beyond having Node and npm available.
+
+- `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
+- `npm run test`: run the baseline smoke check.
+- `./init.sh`: run the standard repository gate without starting a long-running
+  server.
+- `CI=true ./init.sh`: run the same gate in CI-style mode.
+
+The current product slice is a responsive home shell only. Game creation,
+scoring, history, finishing, podium, and replay are intentionally left for later
+feature PRs.
+
 ## Next steps
 
-The app has not been defined or bootstrapped yet. Begin with `$build-brief`, then use `$harness-starter` to derive project instructions, a verification script, progress notes, and a feature list. Run `$feature-flow` for one feature at a time afterward.
-
-For training, the first feature can be run one role at a time to inspect each artifact before continuing. Product test commands will be documented after technical bootstrap.
+Run `$feature-flow` one feature at a time. After `bootstrap-web-shell` is
+accepted and merged, the next feature is `create-game-roster`.

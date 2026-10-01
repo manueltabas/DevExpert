@@ -5,13 +5,21 @@
     "title": "Open the responsive app shell",
     "user_visible_behavior": "A local HTTP URL serves a responsive home shell with the accepted visual baseline.",
     "depends_on": [],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Serve the shell over HTTP and verify it loads at 320px and desktop widths without horizontal overflow.",
       "Establish an executable automated smoke check; make ./init.sh run the real baseline checks and exit.",
       "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
     ],
-    "evidence": [],
+    "evidence": [
+      "2026-10-01: ./init.sh ran node --check src/main.js and npm run test; smoke check passed by serving the static shell over HTTP and verifying expected landmarks and inert controls. Localhost binding required running the command outside the restricted sandbox.",
+      "2026-10-01: CI=true ./init.sh ran the same baseline gate; smoke check passed and the script exited without starting a long-running server.",
+      "2026-10-01: npm run dev served http://127.0.0.1:4173/ for browser inspection. Real browser checks at 320x720 and 1280x800 reported no horizontal overflow, no console errors, appReady=true, and the New game control disabled.",
+      "2026-10-01: Earlier accepted status was superseded by independent revalidation findings; repair returned the feature to in_progress before changing the server boundary.",
+      "2026-10-01: Repair added an explicit public-file allowlist and malformed-URL handling to scripts/static-server.mjs. npm test passed with negative HTTP checks for /AGENTS.md, /feature_list.json, /.git/config, malformed /%E0%A4%A returning 400, and a healthy GET afterward.",
+      "2026-10-01: Repair verification passed: ./init.sh and CI=true ./init.sh ran node --check src/main.js and npm run test; both exited cleanly without starting a long-running server.",
+      "2026-10-01: Independent validator accepted the repaired feature after rerunning both gates and HTTP probes: public assets 200, repository files 404, malformed URL 400, subsequent root request 200. Earlier 320px/desktop browser checks cover the unchanged UI; browser automation was unavailable during the repair review."
+    ],
     "notes": "Choose minimal local server and test tooling; document runnable commands. No scoring or game creation in this slice."
   },
   {
