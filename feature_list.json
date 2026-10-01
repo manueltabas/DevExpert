@@ -1,0 +1,170 @@
+[
+  {
+    "id": "bootstrap-web-shell",
+    "area": "platform",
+    "title": "Open the responsive app shell",
+    "user_visible_behavior": "A local HTTP URL serves a responsive home shell with the accepted visual baseline.",
+    "depends_on": [],
+    "status": "not_started",
+    "verification": [
+      "Serve the shell over HTTP and verify it loads at 320px and desktop widths without horizontal overflow.",
+      "Establish an executable automated smoke check; make ./init.sh run the real baseline checks and exit.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Choose minimal local server and test tooling; document runnable commands. No scoring or game creation in this slice."
+  },
+  {
+    "id": "create-game-roster",
+    "area": "games",
+    "title": "Start a game with named players",
+    "user_visible_behavior": "The scorekeeper creates an in-memory active game with up to 20 named, colored players starting at zero.",
+    "depends_on": [
+      "bootstrap-web-shell"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Create a game with 20 players and repeated colors; verify distinct identities, visible names, and zero totals.",
+      "Reject a 21st player and invalid names; check keyboard and narrow-screen setup flow.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Use the seven agreed colors and markers. Resolve minimum roster, labels, and name rules in the spec. Persistence is added later."
+  },
+  {
+    "id": "add-player-score",
+    "area": "scoring",
+    "title": "Apply a signed score change",
+    "user_visible_behavior": "The scorekeeper adds positive or negative integer points to one player and sees the total immediately.",
+    "depends_on": [
+      "create-game-roster"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Apply +10 then -3 to one player; verify total 7 and other players remain at zero.",
+      "Reject decimals, non-numbers, and unsafe amounts without altering totals; test signed input on mobile.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "No mandatory round or zero entries for other players. Resolve safe bounds and zero handling in the spec."
+  },
+  {
+    "id": "rank-leaderboard",
+    "area": "scoring",
+    "title": "Rank the live leaderboard",
+    "user_visible_behavior": "Players appear in descending total order with equal totals sharing their competition rank.",
+    "depends_on": [
+      "add-player-score"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Verify totals 12, 12, 8 produce ranks 1, 1, 3; verify negative totals and all-player ties.",
+      "Change a score and check immediate reorder, stable tied display, and retained keyboard focus.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Use rank = 1 + count of strictly higher totals. Keep names/icons readable with 20 players."
+  },
+  {
+    "id": "undo-latest-score",
+    "area": "scoring",
+    "title": "Undo the latest score change",
+    "user_visible_behavior": "The scorekeeper reverses the latest score change and sees corrected totals and ranks.",
+    "depends_on": [
+      "rank-leaderboard"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Apply changes to two different players; undo the latest and verify only its recipient total is restored.",
+      "Check undo when there is no change and after a negative change.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Resolve repeated-undo depth in the spec. Undo applies to scores, not finishing."
+  },
+  {
+    "id": "resume-saved-game",
+    "area": "history",
+    "title": "Resume a saved game",
+    "user_visible_behavior": "The homepage lists browser-saved games and reopens an unfinished game with its roster and scores intact.",
+    "depends_on": [
+      "undo-latest-score"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Create and score two games, reload the browser page, then resume each from home with correct independent totals.",
+      "Check saved names, colors, game labels, ordering, and local-only retention messaging on mobile.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Persist successful game mutations in localStorage. Define saved-data format and undo-after-reload behavior; catch save errors from the start."
+  },
+  {
+    "id": "handle-storage-failure",
+    "area": "reliability",
+    "title": "Explain unavailable game storage",
+    "user_visible_behavior": "Storage failures and invalid saved data produce actionable feedback without silently losing or overwriting saved games.",
+    "depends_on": [
+      "resume-saved-game"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Simulate blocked/quota-failing writes; verify no false saved confirmation and no silent loss of prior data.",
+      "Load malformed or incompatible saved data; verify an understandable error and preservation of the original payload.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Keep diagnostics local. No cloud recovery, export, or data-deletion feature; define the safe failure behavior in the spec."
+  },
+  {
+    "id": "finish-game",
+    "area": "games",
+    "title": "Finish a game with locked standings",
+    "user_visible_behavior": "The scorekeeper confirms finishing; final standings remain saved and read-only when reopened from home.",
+    "depends_on": [
+      "handle-storage-failure"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Cancel finishing and confirm scoring still works; then finish and verify score/undo mutations are unavailable.",
+      "Reload and reopen the finished game; verify final ranks and totals remain unchanged.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Finalization is irreversible in the MVP. Keep the complete standings available; celebratory modal is the next slice."
+  },
+  {
+    "id": "celebrate-podium",
+    "area": "results",
+    "title": "Celebrate the final podium",
+    "user_visible_behavior": "Finishing opens a dismissible podium modal with all players in ranks 1\u20133 and brief confetti.",
+    "depends_on": [
+      "finish-game"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Finish tied games including ranks 1, 1, 3 and all 20 players tied; ensure all eligible players are visible.",
+      "Check modal focus, keyboard dismissal, narrow-screen scrolling, and suppressed confetti under reduced motion.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "Do not force three distinct winners. Celebration must not affect saved standings."
+  },
+  {
+    "id": "play-again",
+    "area": "games",
+    "title": "Replay with the same players",
+    "user_visible_behavior": "From a finished game, Play again creates a separate active game with copied player presentation and zero scores.",
+    "depends_on": [
+      "celebrate-podium"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Finish a game, replay, and verify names/colors/markers match while totals and undo history reset.",
+      "Score the new game and reload; verify both games remain separate and the original results are unchanged.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "evidence": [],
+    "notes": "New game-scoped identities; copy no scores or undo state. Verify the full MVP flow through replay at mobile and desktop sizes."
+  }
+]
