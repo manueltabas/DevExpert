@@ -16,6 +16,7 @@ const MIME_TYPES = {
 const DEFAULT_PUBLIC_FILES = new Set([
   "index.html",
   "src/main.js",
+  "src/roster.js",
   "src/styles.css"
 ]);
 

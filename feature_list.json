@@ -30,13 +30,17 @@
     "depends_on": [
       "bootstrap-web-shell"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Create a game with 20 players and repeated colors; verify distinct identities, visible names, and zero totals.",
       "Reject a 21st player and invalid names; check keyboard and narrow-screen setup flow.",
       "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
     ],
-    "evidence": [],
+    "evidence": [
+      "2026-10-02: Independent validator ran CI=true ./init.sh with localhost permission; syntax, roster unit, HTTP smoke, and Chrome browser checks passed.",
+      "2026-10-02: Browser checks covered desktop creation, 320px setup, 20-player cap, duplicate names/colors, invalid names, zero totals, no persistence, no console errors, and no horizontal overflow.",
+      "2026-10-02: Independent validator accepted create-game-roster after reviewing the documentation repair. Previously passing runtime/browser evidence was reused because code and tests were unchanged."
+    ],
     "notes": "Use the seven agreed colors and markers. Resolve minimum roster, labels, and name rules in the spec. Persistence is added later."
   },
   {

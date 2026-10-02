@@ -26,19 +26,23 @@ The local `feature-flow` skill is adapted for one feature per pull request.
 ## App commands
 
 The product is a static HTML/CSS/JavaScript app. No dependency installation is
-required for the current bootstrap beyond having Node and npm available.
+required. Use Node 22 or newer and npm. The browser test also requires Google
+Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
+to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run the baseline smoke check.
+- `npm run test`: run roster unit checks, HTTP smoke checks, and desktop/mobile browser tests.
+- `npm run test:browser`: run only the Chrome roster interaction checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
 - `CI=true ./init.sh`: run the same gate in CI-style mode.
 
-The current product slice is a responsive home shell only. Game creation,
-scoring, history, finishing, podium, and replay are intentionally left for later
-feature PRs.
+Choose **New game**, enter a title and 2–20 player names, select colors, then
+choose **Start game**. The active roster shows every player at zero. Names and
+colors can repeat; numbered markers distinguish players. The game is held in
+memory and disappears on reload. Scoring and saved history arrive in later PRs.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `bootstrap-web-shell` is
-accepted and merged, the next feature is `create-game-roster`.
+Run `$feature-flow` one feature at a time. After `create-game-roster` is
+accepted and merged, the next feature is `add-player-score`.

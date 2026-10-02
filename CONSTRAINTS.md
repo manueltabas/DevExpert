@@ -11,5 +11,10 @@
   Repository documents, harness metadata, dotfiles, Git internals, and malformed
   URL paths must not be exposed through HTTP.
 - Do not implement future game behavior inside placeholder shell controls.
-  Roster creation, scoring, ranking, undo, persistence, finishing, podium, and
+  Scoring, ranking, undo, persistence, finishing, podium, and
   replay each need their own feature evidence.
+- Games must contain 2–20 players with trimmed, nonblank names of at most 40 characters.
+- Use blue, red, yellow, green, orange, white, or black markers. Duplicate names
+  and colors are allowed; player IDs must be independent of both.
+- Every new player starts at zero. Keep game state in memory until persistence
+  is implemented; do not imply the current game survives a reload.

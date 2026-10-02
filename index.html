@@ -9,6 +9,7 @@
       content="A playful board-game scorekeeper shell for local game history and scores."
     >
     <link rel="stylesheet" href="./src/styles.css">
+    <link rel="icon" href="data:,">
     <script type="module" src="./src/main.js"></script>
   </head>
   <body>
@@ -31,67 +32,7 @@
       </header>
 
       <main id="main-content" class="home-layout">
-        <section class="hero-panel" aria-labelledby="home-title">
-          <div class="hero-copy">
-            <p class="eyebrow">Ready for the next table?</p>
-            <h2 id="home-title">Track scores while the game stays on the table.</h2>
-            <p>
-              This first shell sets up the responsive home view. Game creation,
-              scoring, saving, and finished results will arrive in later slices.
-            </p>
-          </div>
-          <div class="hero-actions" aria-label="Game actions">
-            <button type="button" class="primary-action" disabled title="Game creation arrives in the next feature">
-              New game
-            </button>
-            <span class="status-pill">Shell only</span>
-          </div>
-        </section>
-
-        <section class="dashboard-grid" aria-label="Game history">
-          <article class="panel" aria-labelledby="unfinished-title">
-            <div class="panel-heading">
-              <span class="dice-card" aria-hidden="true">
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
-              <div>
-                <p class="eyebrow">Home</p>
-                <h2 id="unfinished-title">Unfinished games</h2>
-              </div>
-            </div>
-            <div class="empty-state">
-              <p class="empty-title">No games in progress yet.</p>
-              <p>
-                Soon this area will reopen games saved in this browser, with each
-                player and score intact.
-              </p>
-            </div>
-          </article>
-
-          <article class="panel" aria-labelledby="finished-title">
-            <div class="panel-heading">
-              <span class="token-stack" aria-hidden="true">
-                <span class="marker marker-blue"></span>
-                <span class="marker marker-orange"></span>
-                <span class="marker marker-green"></span>
-              </span>
-              <div>
-                <p class="eyebrow">History</p>
-                <h2 id="finished-title">Finished games</h2>
-              </div>
-            </div>
-            <div class="empty-state">
-              <p class="empty-title">Podiums will live here.</p>
-              <p>
-                Finished games will be read-only, with a quick way to play again
-                using the same players.
-              </p>
-            </div>
-          </article>
-        </section>
+        <div id="app" data-app-root></div>
       </main>
 
       <footer class="site-footer">

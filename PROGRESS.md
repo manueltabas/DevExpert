@@ -2,17 +2,31 @@
 
 ## Current verified state
 
-- Phase: product bootstrap independently accepted after repair; PR review pending.
+- Phase: roster implementation independently accepted; PR review pending.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs `node --check src/main.js` and `npm run test`.
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster unit, HTTP smoke, and Chrome browser checks.
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next ready feature after revalidation, PR, and merge: `create-game-roster`.
-- Features: `bootstrap-web-shell` is `accepted`; remaining slices are `not_started`.
+- Next feature after acceptance, PR, and merge: `add-player-score`.
+- Features: `bootstrap-web-shell` and `create-game-roster` are `accepted`; remaining slices are `not_started`.
 - Blockers: none for the feature. Localhost-binding commands need permission outside the restricted sandbox in this environment.
-- Last verification: 2026-10-01.
+- Last verification: 2026-10-02.
 
 ## Session log
+
+### 2026-10-02 — Roster verification and handoff repair
+
+- Added home → setup → active-game flow, 2–20 named players, repeatable colors,
+  numbered markers, distinct IDs, and zero totals. State remains in memory.
+- Independent validator ran `CI=true ./init.sh` successfully with localhost permission:
+  syntax checks, roster tests, HTTP smoke, and Chrome interaction checks passed.
+- Browser coverage: desktop creation, 320px layout, 20-player cap, invalid names,
+  duplicate names/colors, zero totals, no localStorage writes, and no console errors/overflow.
+- Validator requested documentation repair only. Updated README, architecture,
+  constraints, progress, and feature evidence to match the tested implementation.
+- Final independent verdict: `accept` after documentation repair, reusing passing
+  runtime/browser evidence because application code and tests were unchanged.
+- Next: publish the roster PR and wait for user review. Plan `add-player-score` after merge when requested.
 
 ### 2026-10-01 — Minimal startup harness
 
