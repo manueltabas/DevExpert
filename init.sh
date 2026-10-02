@@ -15,6 +15,15 @@ done
 printf '%s\n' 'Running baseline checks: node --check src/main.js'
 node --check src/main.js
 
+printf '%s\n' 'Running baseline checks: node --check src/roster.js'
+node --check src/roster.js
+
+printf '%s\n' 'Running baseline checks: node --check scripts/roster-test.mjs'
+node --check scripts/roster-test.mjs
+
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-roster-test.mjs'
+node --check scripts/browser-roster-test.mjs
+
 printf '%s\n' 'Running baseline checks: npm run test'
 npm run test
 

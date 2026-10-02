@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "npm run test:smoke",
+    "test": "npm run test:roster && npm run test:smoke && npm run test:browser",
+    "test:browser": "node scripts/browser-roster-test.mjs",
+    "test:roster": "node scripts/roster-test.mjs",
     "test:smoke": "node scripts/smoke.mjs"
   }
 }
