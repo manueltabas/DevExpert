@@ -211,5 +211,21 @@
     ],
     "evidence": [],
     "notes": "New game-scoped identities; copy no scores or undo state. Verify the full MVP flow through replay at mobile and desktop sizes."
+  },
+  {
+    "id": "restrict-score-entry-input",
+    "area": "scoring",
+    "title": "Restrict the score field to plain signed integers",
+    "user_visible_behavior": "The score field rejects letter characters such as e, so only plain signed integers can be entered and saved.",
+    "depends_on": [
+      "play-again"
+    ],
+    "status": "not_started",
+    "verification": [
+      "Type e, E, and other letters into the score field on desktop and mobile keypads; verify no letter can be entered or saved.",
+      "Verify signed integers like +10 and -3 still save correctly and existing rejections (decimals, zero, out-of-range) still work.",
+      "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
+    ],
+    "notes": "Reported during resume-saved-game review: type=number inputs accept e for scientific notation. Resolve the fix mechanism (input filtering, inputmode, pattern, or type change) in the spec, including interplay with the documented 1e3 semantic-parse decision and its existing test assertions from add-player-score."
   }
 ]
