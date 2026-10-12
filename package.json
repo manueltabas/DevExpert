@@ -5,9 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "npm run test:roster && npm run test:smoke && npm run test:browser",
+    "test": "npm run test:roster && npm run test:score && npm run test:smoke && npm run test:browser && npm run test:browser:score",
     "test:browser": "node scripts/browser-roster-test.mjs",
+    "test:browser:score": "node scripts/browser-score-test.mjs",
     "test:roster": "node scripts/roster-test.mjs",
+    "test:score": "node scripts/score-test.mjs",
     "test:smoke": "node scripts/smoke.mjs"
   }
 }

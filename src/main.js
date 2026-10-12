@@ -11,6 +11,7 @@ import {
   getColor,
   validateRoster
 } from "./roster.js";
+import { MAX_SCORE_ABS, applyScoreChange, parseScoreAmount } from "./score.js";
 
 const appRoot = document.querySelector("[data-app-root]");
 const yearTarget = document.querySelector("[data-current-year]");
@@ -19,9 +20,21 @@ const state = {
   title: FALLBACK_TITLE,
   rows: createSetupRows(),
   activeGame: null,
+  selectedPlayerId: null,
+  scoreFeedback: null,
   errors: [],
   limitMessage: "",
   nextRowNumber: MIN_PLAYERS + 1
+};
+
+const SCORE_ERROR_MESSAGES = {
+  "empty": "Enter an amount first.",
+  "not-a-number": "Enter a whole number, like 10 or -3.",
+  "not-integer": "Decimals are not allowed. Enter a whole number like 10 or -3.",
+  "zero": "Zero adds no points. Enter a positive or negative amount.",
+  "out-of-range": `Amounts must stay between ${-MAX_SCORE_ABS} and ${MAX_SCORE_ABS}.`,
+  "unknown-player": "Select a player before saving points.",
+  "not-safe": "That change would create an unsafe total. Try a smaller amount."
 };
 
 if (yearTarget) {
@@ -273,6 +286,8 @@ function bindSetupEvents() {
     }
 
     state.activeGame = game;
+    state.selectedPlayerId = game.players[0]?.id ?? null;
+    state.scoreFeedback = null;
     state.view = "active";
     state.errors = [];
     state.limitMessage = "";
@@ -290,56 +305,195 @@ function renderActiveGame() {
     return;
   }
 
+  if (!game.players.some((player) => player.id === state.selectedPlayerId)) {
+    state.selectedPlayerId = game.players[0]?.id ?? null;
+  }
+
+  const selectedPlayer = game.players.find((player) => player.id === state.selectedPlayerId) ?? null;
+
   appRoot.innerHTML = `
     <section class="active-layout" aria-labelledby="active-title">
-      <div class="active-header">
-        <button type="button" class="ghost-action" data-action="back-home">All games</button>
-        <div>
-          <p class="eyebrow">In progress</p>
-          <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(game.title)}</h2>
+      <div class="active-board">
+        <div class="active-header">
+          <button type="button" class="ghost-action" data-action="back-home">All games</button>
+          <div>
+            <p class="eyebrow">In progress</p>
+            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(game.title)}</h2>
+          </div>
+          <span class="status-pill">${game.players.length} players</span>
         </div>
-        <span class="status-pill">${game.players.length} players</span>
+
+        <div class="panel roster-panel">
+          <div class="panel-heading">
+            <span class="dice-card" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <div>
+              <p class="eyebrow">Totals</p>
+              <h3>Totals update with every save</h3>
+            </div>
+          </div>
+
+          <ol class="active-roster" aria-label="Active game players">
+            ${game.players.map((player) => renderActivePlayer(player, player.id === state.selectedPlayerId)).join("")}
+          </ol>
+        </div>
       </div>
 
-      <div class="panel roster-panel">
+      <aside class="panel score-panel" aria-labelledby="score-panel-title">
         <div class="panel-heading">
-          <span class="dice-card" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
           <div>
-            <p class="eyebrow">Starting totals</p>
-            <h3>Everyone begins at zero</h3>
+            <p class="eyebrow">Score entry</p>
+            <h3 id="score-panel-title">Add points</h3>
           </div>
         </div>
-
-        <ol class="active-roster" aria-label="Active game players">
-          ${game.players.map((player) => renderActivePlayer(player)).join("")}
-        </ol>
-      </div>
+        ${selectedPlayer ? renderScoreForm(selectedPlayer) : ""}
+      </aside>
     </section>
   `;
 
-  appRoot.querySelector("[data-action='back-home']")?.addEventListener("click", () => {
-    state.view = "home";
-    render();
-    appRoot.querySelector("[data-action='new-game']")?.focus();
-  });
+  bindActiveEvents();
 }
 
-function renderActivePlayer(player) {
+function renderActivePlayer(player, isSelected) {
   const color = getColor(player.color);
 
   return `
-    <li class="active-player" data-player-id="${escapeAttribute(player.id)}">
+    <li class="active-player${isSelected ? " is-selected" : ""}" data-player-id="${escapeAttribute(player.id)}">
       <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
       <span class="active-player-name">${escapeHtml(player.name)}</span>
-      <span class="active-player-total" aria-label="${escapeAttribute(player.name)} total">0</span>
+      <span class="active-player-total" aria-label="${escapeAttribute(player.name)} total">${String(player.total)}</span>
+      <button type="button" class="add-points-action" data-action="select-player" aria-pressed="${isSelected ? "true" : "false"}" aria-label="Add points for ${escapeAttribute(player.name)}">Add points</button>
     </li>
   `;
+}
+
+function renderScoreForm(player) {
+  const color = getColor(player.color);
+
+  return `
+    <form class="score-form" novalidate data-score-form>
+      <p class="score-selected">
+        <span class="player-token ${color.cssClass}" aria-hidden="true">${escapeHtml(player.marker)}</span>
+        <span class="score-selected-name">${escapeHtml(player.name)}</span>
+      </p>
+
+      <label class="field-label" for="score-amount">Points for ${escapeHtml(player.name)}</label>
+      <input id="score-amount" class="text-field score-amount-field" name="amount" type="number" step="1" min="${-MAX_SCORE_ABS}" max="${MAX_SCORE_ABS}" autocomplete="off" aria-describedby="score-help score-feedback">
+
+      <p id="score-help" class="assistive-text">Use negative points for penalties. Whole numbers from ${-MAX_SCORE_ABS} to ${MAX_SCORE_ABS}.</p>
+
+      <div id="score-feedback" class="form-feedback" aria-live="polite">${renderScoreFeedback()}</div>
+
+      <button type="submit" class="primary-action">Save points</button>
+    </form>
+  `;
+}
+
+function renderScoreFeedback() {
+  if (!state.scoreFeedback) {
+    return "";
+  }
+
+  const className = state.scoreFeedback.kind === "error" ? "validation-message" : "success-message";
+  return `<p class="${className}">${escapeHtml(state.scoreFeedback.message)}</p>`;
+}
+
+function bindActiveEvents() {
+  appRoot.querySelector("[data-action='back-home']")?.addEventListener("click", () => {
+    state.view = "home";
+    state.selectedPlayerId = null;
+    state.scoreFeedback = null;
+    render();
+    appRoot.querySelector("[data-action='new-game']")?.focus();
+  });
+
+  appRoot.querySelectorAll("[data-action='select-player']").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const row = event.target.closest("[data-player-id]");
+
+      if (!row) {
+        return;
+      }
+
+      state.selectedPlayerId = row.dataset.playerId;
+      state.scoreFeedback = null;
+      render();
+      appRoot.querySelector("#score-amount")?.focus();
+    });
+  });
+
+  appRoot.querySelector("[data-score-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handleScoreSubmit();
+  });
+}
+
+function handleScoreSubmit() {
+  const input = appRoot.querySelector("#score-amount");
+
+  if (!input) {
+    return;
+  }
+
+  const parsed = parseScoreAmount(input.value);
+
+  if (parsed.error) {
+    rejectScoreEntry(SCORE_ERROR_MESSAGES[parsed.error] ?? SCORE_ERROR_MESSAGES["not-a-number"]);
+    return;
+  }
+
+  const targetPlayer = state.activeGame?.players.find((player) => player.id === state.selectedPlayerId);
+  const result = applyScoreChange({
+    game: state.activeGame,
+    playerId: state.selectedPlayerId,
+    amount: parsed.amount
+  });
+
+  if (result.error || !result.game || !targetPlayer) {
+    rejectScoreEntry(SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["unknown-player"]);
+    return;
+  }
+
+  const updatedTotal = result.game.players.find((player) => player.id === state.selectedPlayerId)?.total;
+  state.activeGame = result.game;
+  state.scoreFeedback = {
+    kind: "success",
+    message: `Added ${parsed.amount} points to ${targetPlayer.name}. New total: ${updatedTotal}.`
+  };
+  render();
+  appRoot.querySelector("#score-amount")?.focus();
+}
+
+function rejectScoreEntry(message) {
+  state.scoreFeedback = { kind: "error", message };
+  paintScoreFeedback();
+  appRoot.querySelector("#score-amount")?.focus();
+}
+
+function paintScoreFeedback() {
+  const region = appRoot.querySelector("#score-feedback");
+
+  if (!region) {
+    return;
+  }
+
+  region.replaceChildren();
+
+  if (!state.scoreFeedback) {
+    return;
+  }
+
+  const message = document.createElement("p");
+  message.className = state.scoreFeedback.kind === "error" ? "validation-message" : "success-message";
+  message.textContent = state.scoreFeedback.message;
+  region.append(message);
 }
 
 function resetSetup() {
   state.title = FALLBACK_TITLE;
   state.rows = createSetupRows();
   state.activeGame = null;
+  state.selectedPlayerId = null;
+  state.scoreFeedback = null;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;

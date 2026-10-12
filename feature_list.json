@@ -51,13 +51,21 @@
     "depends_on": [
       "create-game-roster"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Apply +10 then -3 to one player; verify total 7 and other players remain at zero.",
       "Reject decimals, non-numbers, and unsafe amounts without altering totals; test signed input on mobile.",
       "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
     ],
-    "evidence": [],
+    "evidence": [
+      "2026-10-12: node --check passed for src/main.js, src/roster.js, src/score.js, scripts/roster-test.mjs, scripts/score-test.mjs, scripts/browser-roster-test.mjs, scripts/browser-score-test.mjs, scripts/browser-test-utils.mjs, and scripts/smoke.mjs.",
+      "2026-10-12: npm run test:score passed; covered every parse error code (empty, not-a-number, not-integer, zero, out-of-range), accepted signed forms including 1e3, +10/-3 -> total 7 with the other player at 0, negative totals, change-log appends with unique ids, boundary amounts, the Number.MAX_SAFE_INTEGER guard, and immutability of rejected input.",
+      "2026-10-12: npm run test passed: roster unit, score unit, HTTP smoke (src/score.js served 200; AGENTS.md, feature_list.json, and .git/config blocked; malformed path 400), roster browser test, and score browser test.",
+      "2026-10-12: scripts/browser-score-test.mjs passed on real headless Chrome: desktop +10 then -3 -> total 7 with Sam at 0, aria-pressed selection, semantic 1e3 entry, rejected 2.5/abc/empty/1000001/-1000001/0 with announced errors and unchanged totals, negative total -5 displayed, focus retained in the input, localStorage.length 0, no horizontal overflow, no console errors; 320px panel stacked below the roster with >=44px targets and keyboard Enter activation of a row button.",
+      "2026-10-12: ./init.sh and CI=true ./init.sh passed; both ran the syntax checks and the full npm run test chain and exited without starting a long-running server.",
+      "2026-10-12: npm run dev probe returned 200 for / and /src/score.js and 404 for /AGENTS.md; browser screenshots saved at /var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-add-player-score/desktop-score-entry.png and mobile-score-entry.png.",
+      "2026-10-12: Independent validator verdict: accept. Reran CI=true ./init.sh plus focused score and browser-score checks and live HTTP boundary probes; spec code review found zero discrepancies and no security findings."
+    ],
     "notes": "No mandatory round or zero entries for other players. Resolve safe bounds and zero handling in the spec."
   },
   {

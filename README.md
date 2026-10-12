@@ -31,18 +31,23 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster unit checks, HTTP smoke checks, and desktop/mobile browser tests.
+- `npm run test`: run roster and score unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster and scoring flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
+- `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
 - `CI=true ./init.sh`: run the same gate in CI-style mode.
 
 Choose **New game**, enter a title and 2–20 player names, select colors, then
-choose **Start game**. The active roster shows every player at zero. Names and
-colors can repeat; numbered markers distinguish players. The game is held in
-memory and disappears on reload. Scoring and saved history arrive in later PRs.
+choose **Start game**. In the active game, pick a player with its row's
+**Add points** button, type a signed whole-number amount (−1,000,000 to
+1,000,000), and choose **Save points** to see that player's total update
+immediately; other players keep their totals. Zero, decimals, and out-of-range
+amounts are rejected with a clear message. Names and colors can repeat; numbered
+markers distinguish players. The game and its change log stay in memory and
+disappear on reload. Saved history arrives in a later PR.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `create-game-roster` is
-accepted and merged, the next feature is `add-player-score`.
+Run `$feature-flow` one feature at a time. After `add-player-score` is
+accepted and merged, the next feature is `rank-leaderboard`.
