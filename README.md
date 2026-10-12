@@ -31,10 +31,11 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, and score unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, and leaderboard flows.
+- `npm run test`: run roster, standings, and score unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, and undo flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
+- `npm run test:browser:undo`: run only the Chrome undo interaction checks.
 - `npm run test:standings`: run only the ranking unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
@@ -47,12 +48,16 @@ ranks 1, 1, 3), and tied players keep their creation order. Pick a player with
 its row's **Add points** button, type a signed whole-number amount
 (−1,000,000 to 1,000,000), and choose **Save points** to see the leaderboard
 re-rank immediately; the confirmation names the player's new rank. Zero,
-decimals, and out-of-range amounts are rejected with a clear message. Names and
+decimals, and out-of-range amounts are rejected with a clear message. Choose
+**Undo last score** to reverse the most recent change: the affected player's
+total is restored, ranks correct themselves, and repeated presses walk backward
+through the history one change at a time; undoing with an empty history
+announces "Nothing to undo yet." without changing anything. Names and
 colors can repeat; numbered markers distinguish players. Ranks are derived at
 render time only — the game and its change log stay in memory and disappear on
 reload. Saved history arrives in a later PR.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `rank-leaderboard` is
-accepted and merged, the next feature is `undo-latest-score`.
+Run `$feature-flow` one feature at a time. After `undo-latest-score` is
+accepted and merged, the next feature is `resume-saved-game`.

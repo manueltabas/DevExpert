@@ -101,13 +101,21 @@
     "depends_on": [
       "rank-leaderboard"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Apply changes to two different players; undo the latest and verify only its recipient total is restored.",
       "Check undo when there is no change and after a negative change.",
       "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
     ],
-    "evidence": [],
+    "evidence": [
+      "2026-10-12: node --check passed for src/score.js, src/main.js, scripts/score-test.mjs, and scripts/browser-undo-test.mjs (plus every pre-existing source and test script via the init.sh gate).",
+      "2026-10-12: npm run test:score passed: pre-existing parse/log/immutability cases plus new undo cases — nothing-to-undo registered in SCORE_ERROR_CODES; null/undefined/fresh-createGame (no changes property)/empty-array/non-array logs -> nothing-to-undo; +10 Alex, -3 Alex, +5 Sam log undoes latest-only (Sam 5 -> 0, Alex stays 7, log shrinks to 2, undone equals the popped entry); repeated undo drains in reverse order (-3 restores Alex to 10, then +10 drains to 0) and a further undo reports nothing-to-undo; negative -10 undo restores Sam to 0; unknown playerId log -> unknown-player; MAX_SAFE_INTEGER restore -> not-safe; structuredClone snapshots prove the input game is never mutated; game.status stays 'active'; no rank fields on players and change entries keep only id/playerId/amount keys.",
+      "2026-10-12: npm run test passed end to end: roster unit, standings unit, score unit (with undo cases), HTTP smoke (src/score.js served 200; AGENTS.md, feature_list.json, and .git/config blocked; malformed path 400), and all four browser suites including the new undo suite chained into the test script.",
+      "2026-10-12: scripts/browser-undo-test.mjs passed on real headless Chrome covering spec Scenarios 1-6: (1) +10 Alex then +5 Sam, undo restored only Sam (10/0), feedback 'Undid 5 points for Sam. New total: 0. Rank: 2.', aria-pressed and selection unchanged, focus moved to the undo button, input cleared, and a second undo removed Alex's +10 proving one log entry remained; (2) fresh-game undo announced exactly 'Nothing to undo yet.' with .info-message present (computed color rgb(109,101,92), not the error color), totals/ranks unchanged, focus left in #score-amount, and a roster-row DOM sentinel survived proving no re-render; (3) after Alex -3 (rows Sam then Alex) undo restored total 0 and announced 'Undid -3 points for Alex. New total: 0. Rank: 1.'; (4) three changes +10/+12/+8 walked back with three keyboard Enter presses (Jamie 0, then Sam 0, then Alex 0 with corrected ranks each time), focus on the undo button after every activation, and a fourth press produced the non-re-rendering no-op; (5) an overtaking +5 for Sam (rows Sam 10 then Alex 7) reverted to the pre-change order (rows Alex 7 then Sam 5) with corrected competition ranks, aria-labels, and aria-pressed still following Sam; (6) at 320px the type=button secondary 'Undo last score' control is visible below Save points in the stacked panel, >=44px tall/wide, has a visible focus outline, and keyboard Enter undid then no-oped with no horizontal overflow; localStorage.length 0 and zero console errors throughout. Screenshots: /var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-undo-latest-score/desktop-undo-latest.png and mobile-undo-320px.png (generated but not visually openable this session; readability asserted programmatically).",
+      "2026-10-12: ./init.sh and CI=true ./init.sh both passed; each ran node --check on all sources and test scripts (including the new scripts/browser-undo-test.mjs) and the full npm run test chain, then exited without starting a long-running server.",
+      "2026-10-12: npm run dev probe returned 200 for /, /src/score.js (serving the new undoLastScoreChange export), and /src/main.js, and 404 for /AGENTS.md; scripts/static-server.mjs allowlist and scripts/smoke.mjs asset check cover src/score.js already, so no server or smoke changes were needed (no new module).",
+      "2026-10-12: Independent validator verdict: accept. Reran CI=true ./init.sh, ./init.sh, the score and browser-undo suites, HTTP boundary probes, and 10 extra edge-case probe groups (drain-to-empty, deep immutability, status/order preservation, rankPlayers interop); no security findings; evidence claims reproduced exactly."
+    ],
     "notes": "Resolve repeated-undo depth in the spec. Undo applies to scores, not finishing."
   },
   {

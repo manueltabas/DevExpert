@@ -11,7 +11,12 @@ import {
   getColor,
   validateRoster
 } from "./roster.js";
-import { MAX_SCORE_ABS, applyScoreChange, parseScoreAmount } from "./score.js";
+import {
+  MAX_SCORE_ABS,
+  applyScoreChange,
+  parseScoreAmount,
+  undoLastScoreChange
+} from "./score.js";
 import { rankPlayers } from "./standings.js";
 
 const appRoot = document.querySelector("[data-app-root]");
@@ -35,7 +40,14 @@ const SCORE_ERROR_MESSAGES = {
   "zero": "Zero adds no points. Enter a positive or negative amount.",
   "out-of-range": `Amounts must stay between ${-MAX_SCORE_ABS} and ${MAX_SCORE_ABS}.`,
   "unknown-player": "Select a player before saving points.",
-  "not-safe": "That change would create an unsafe total. Try a smaller amount."
+  "not-safe": "That change would create an unsafe total. Try a smaller amount.",
+  "nothing-to-undo": "Nothing to undo yet."
+};
+
+const SCORE_FEEDBACK_CLASS_NAMES = {
+  "error": "validation-message",
+  "success": "success-message",
+  "info": "info-message"
 };
 
 if (yearTarget) {
@@ -386,6 +398,7 @@ function renderScoreForm(player) {
       <div id="score-feedback" class="form-feedback" aria-live="polite">${renderScoreFeedback()}</div>
 
       <button type="submit" class="primary-action">Save points</button>
+      <button type="button" class="secondary-action" data-action="undo-last-score">Undo last score</button>
     </form>
   `;
 }
@@ -395,8 +408,11 @@ function renderScoreFeedback() {
     return "";
   }
 
-  const className = state.scoreFeedback.kind === "error" ? "validation-message" : "success-message";
-  return `<p class="${className}">${escapeHtml(state.scoreFeedback.message)}</p>`;
+  return `<p class="${scoreFeedbackClassName(state.scoreFeedback.kind)}">${escapeHtml(state.scoreFeedback.message)}</p>`;
+}
+
+function scoreFeedbackClassName(kind) {
+  return SCORE_FEEDBACK_CLASS_NAMES[kind] ?? SCORE_FEEDBACK_CLASS_NAMES.success;
 }
 
 function bindActiveEvents() {
@@ -426,6 +442,10 @@ function bindActiveEvents() {
   appRoot.querySelector("[data-score-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     handleScoreSubmit();
+  });
+
+  appRoot.querySelector("[data-action='undo-last-score']")?.addEventListener("click", () => {
+    handleUndo();
   });
 }
 
@@ -467,6 +487,36 @@ function handleScoreSubmit() {
   appRoot.querySelector("#score-amount")?.focus();
 }
 
+function handleUndo() {
+  const result = undoLastScoreChange({ game: state.activeGame });
+
+  if (result.error === "nothing-to-undo") {
+    state.scoreFeedback = { kind: "info", message: SCORE_ERROR_MESSAGES["nothing-to-undo"] };
+    paintScoreFeedback();
+    return;
+  }
+
+  const affectedPlayer = result.game?.players.find((player) => player.id === result.undone?.playerId) ?? null;
+
+  if (result.error || !result.game || !result.undone || !affectedPlayer) {
+    state.scoreFeedback = {
+      kind: "error",
+      message: SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["not-safe"]
+    };
+    paintScoreFeedback();
+    return;
+  }
+
+  const restoredRank = rankPlayers(result.game).find((row) => row.player.id === affectedPlayer.id)?.rank ?? null;
+  state.activeGame = result.game;
+  state.scoreFeedback = {
+    kind: "success",
+    message: `Undid ${result.undone.amount} points for ${affectedPlayer.name}. New total: ${affectedPlayer.total}. Rank: ${restoredRank}.`
+  };
+  render();
+  appRoot.querySelector("[data-action='undo-last-score']")?.focus();
+}
+
 function rejectScoreEntry(message) {
   state.scoreFeedback = { kind: "error", message };
   paintScoreFeedback();
@@ -487,7 +537,7 @@ function paintScoreFeedback() {
   }
 
   const message = document.createElement("p");
-  message.className = state.scoreFeedback.kind === "error" ? "validation-message" : "success-message";
+  message.className = scoreFeedbackClassName(state.scoreFeedback.kind);
   message.textContent = state.scoreFeedback.message;
   region.append(message);
 }

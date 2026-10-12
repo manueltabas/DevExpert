@@ -7,7 +7,8 @@ export const SCORE_ERROR_CODES = [
   "zero",
   "out-of-range",
   "unknown-player",
-  "not-safe"
+  "not-safe",
+  "nothing-to-undo"
 ];
 
 export function parseScoreAmount(raw) {
@@ -84,4 +85,35 @@ function createChangeId() {
     return globalThis.crypto.randomUUID();
   }
   return `change-${Date.now()}-${Math.floor(Math.random() * 1_000_000_000)}`;
+}
+
+export function undoLastScoreChange({ game }) {
+  const changes = Array.isArray(game?.changes) ? game.changes : [];
+
+  if (changes.length === 0) {
+    return { game: null, undone: null, error: "nothing-to-undo" };
+  }
+
+  const undone = changes[changes.length - 1];
+  const player = game.players?.find((candidate) => candidate.id === undone?.playerId) ?? null;
+
+  if (!player) {
+    return { game: null, undone: null, error: "unknown-player" };
+  }
+
+  const nextTotal = player.total - undone.amount;
+
+  if (!Number.isSafeInteger(nextTotal)) {
+    return { game: null, undone: null, error: "not-safe" };
+  }
+
+  const players = game.players.map((candidate) =>
+    candidate.id === player.id ? { ...candidate, total: nextTotal } : candidate
+  );
+
+  return {
+    game: { ...game, players, changes: changes.slice(0, -1) },
+    undone,
+    error: null
+  };
 }

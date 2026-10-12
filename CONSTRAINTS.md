@@ -29,3 +29,10 @@
   keep creation order via `player.order` (falling back to the original array
   index). Never store rank fields on players or games, never write ranking to
   the change log, and never persist ranks.
+- Undo always reverses the newest `{ id, playerId, amount }` entry in
+  `game.changes`: subtract that change's amount from its recipient's total and
+  drop the entry, one change per activation, with no depth limit. A missing,
+  empty, or non-array log is a safe no-op that never mutates state. Undo never
+  mutates the input game, never touches `game.status` or `player.order`, and
+  never stores ranks. Undo is in-memory only: it does not survive a reload, and
+  persistence, finishing, and replay slices must keep these rules.
