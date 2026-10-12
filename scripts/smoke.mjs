@@ -22,6 +22,7 @@ try {
   await assertOk(`${baseUrl}src/styles.css`, "CSS should load over HTTP");
   await assertOk(`${baseUrl}src/main.js`, "JavaScript module should load over HTTP");
   await assertOk(`${baseUrl}src/roster.js`, "Roster module should load over HTTP");
+  await assertOk(`${baseUrl}src/score.js`, "Score module should load over HTTP");
   await assertStatus(`${baseUrl}AGENTS.md`, 404, "repository instructions should not be public");
   await assertStatus(`${baseUrl}feature_list.json`, 404, "feature metadata should not be public");
   await assertStatus(`${baseUrl}.git/config`, 404, "git config should not be public");

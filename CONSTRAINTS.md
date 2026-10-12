@@ -18,3 +18,8 @@
   and colors are allowed; player IDs must be independent of both.
 - Every new player starts at zero. Keep game state in memory until persistence
   is implemented; do not imply the current game survives a reload.
+- Score changes are signed whole numbers with magnitude at most 1,000,000.
+  Zero entries are rejected and create no change-log entry; decimals,
+  non-numbers, and out-of-range amounts are rejected without changing totals.
+  Totals may be negative, and each applied change appends
+  `{ id, playerId, amount }` to the in-memory `game.changes` log.

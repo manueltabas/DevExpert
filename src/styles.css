@@ -8,6 +8,7 @@
   --border: #ded6c9;
   --primary: #0868c9;
   --primary-dark: #064d93;
+  --success: #1e6e4e;
   --blue: #1479de;
   --red: #e5483b;
   --yellow: #f5c518;
@@ -423,6 +424,17 @@ h3 {
   align-items: start;
 }
 
+.active-layout {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  align-items: start;
+}
+
+.active-board {
+  min-width: 0;
+  display: grid;
+  gap: 20px;
+}
+
 .setup-panel,
 .active-header {
   min-width: 0;
@@ -614,13 +626,39 @@ h3 {
 
 .active-player {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 12px;
   background: rgba(250, 245, 235, 0.72);
   border: 1px solid var(--border);
   border-radius: 12px;
+}
+
+.active-player.is-selected {
+  background: #ffffff;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(8, 104, 201, 0.16);
+}
+
+.add-points-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  color: var(--primary-dark);
+  background: var(--surface);
+  border: 1px solid rgba(8, 104, 201, 0.28);
+  border-radius: 999px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.add-points-action[aria-pressed="true"] {
+  color: var(--surface);
+  background: var(--primary);
+  border-color: var(--primary);
 }
 
 .active-player-name {
@@ -637,6 +675,47 @@ h3 {
   font-variant-numeric: tabular-nums;
   font-weight: 900;
   text-align: right;
+}
+
+.score-panel {
+  min-width: 0;
+}
+
+.score-form {
+  display: grid;
+  gap: 12px;
+}
+
+.score-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.score-selected .player-token {
+  width: 36px;
+  height: 36px;
+  align-self: center;
+  font-size: 0.95rem;
+}
+
+.score-selected-name {
+  font-weight: 900;
+  font-size: 1.08rem;
+  overflow-wrap: anywhere;
+}
+
+.score-amount-field {
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.success-message {
+  margin: 0;
+  color: var(--success);
+  font-weight: 800;
 }
 
 @media (max-width: 720px) {
@@ -666,6 +745,10 @@ h3 {
     grid-template-columns: 1fr;
   }
 
+  .active-layout {
+    grid-template-columns: 1fr;
+  }
+
   .setup-heading,
   .active-header {
     align-items: start;
@@ -684,6 +767,33 @@ h3 {
   .marker-strip .marker {
     width: 18px;
     height: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .active-player {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "token name total"
+      "select select select";
+    row-gap: 10px;
+  }
+
+  .active-player .player-token {
+    grid-area: token;
+  }
+
+  .active-player-name {
+    grid-area: name;
+  }
+
+  .active-player-total {
+    grid-area: total;
+  }
+
+  .active-player .add-points-action {
+    grid-area: select;
+    width: 100%;
   }
 }
 
