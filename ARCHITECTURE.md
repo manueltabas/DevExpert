@@ -32,27 +32,40 @@ entries skipped by the per-entry crash guard (0 for clean and failed reads).
 `upsertSavedGame` replaces a saved game by id or appends it, and
 `orderSavedGamesForDisplay` sorts copies most-recently-updated first with
 deterministic tie-breaks. `src/main.js` persists the active game after every
-successful game mutation (start, save points, undo, finish), renders the home
-"Unfinished games" list from the active saved games and the "Finished games"
-list from the finished ones, and resumes a saved game by restoring it as the
-active game — so undo works immediately after a reload, undone changes never
-resurrect, and finished games reopen read-only. Ranks stay render-time only
-and are never persisted.
+successful game mutation (start, save points, undo, finish, replay), renders
+the home "Unfinished games" list from the active saved games and the
+"Finished games" list from the finished ones, and resumes a saved game by
+restoring it as the active game — so undo works immediately after a reload,
+undone changes never resurrect, and finished games reopen read-only. Ranks
+stay render-time only and are never persisted.
 
-`src/game.js` contains the pure game-lifecycle transition `finishGame`, the
-one-way `active → finished` change: it accepts only a `status: "active"` game
-(guarding `missing-game` and `already-finished`), returns a new game object
-with only `status` changed, never mutates its input, and stores no ranks,
-timestamps, or other new fields. `src/main.js` renders a `status: "finished"`
-game as a read-only variant of the active view — same header (eyebrow
-"Finished"), back control, storage notice, and full render-time-ranked
-leaderboard, but with a polite `role="status"` note and none of the score
-mutation controls (no Add points buttons, no score-entry panel, no undo).
-Confirming the inline finish prompt calls `persistActiveGameSnapshot()`, so
-finishing is the fourth successful-mutation save trigger, and the home
-screen additionally renders the "Finished games" list from saved games
-filtered to `status: "finished"` with View results controls that reopen the
-read-only view through the same resume path.
+`src/game.js` contains the pure game-lifecycle transitions. `finishGame` is
+the one-way `active → finished` change: it accepts only a `status: "active"`
+game (guarding `missing-game` and `already-finished`), returns a new game
+object with only `status` changed, never mutates its input, and stores no
+ranks, timestamps, or other new fields. `replayGame` is the replay
+transition: it accepts only a `status: "finished"` game (guarding
+`missing-game`, `not-finished`, and roster validation through `invalid-roster`),
+maps the finished roster back to roster rows, and calls `createGame` with the
+`replay-game` id seed — so every game and player identity is structurally new
+(`replay-game-*` ids can never collide with setup-created `active-game-*`
+ids). It copies only presentation (title, names, colors, markers, and the
+creation order, restoring atypical-but-valid stored values literally with
+regenerated fallbacks) while every total restarts at zero and no change log
+or `updatedAt` carries over; the input game is never mutated. `src/main.js`
+renders a `status: "finished"` game as a read-only variant of the active view
+— same header (eyebrow "Finished"), back control, storage notice, and full
+render-time-ranked leaderboard, but with a polite `role="status"` note and
+none of the score mutation controls (no Add points buttons, no score-entry
+panel, no undo) — plus the finished view's only mutation control, a "Play
+again" primary action below the standings with its own polite
+`#replay-feedback` live region for guard messages. Confirming the inline
+finish prompt and activating Play again both call
+`persistActiveGameSnapshot()`, so finishing and replaying are the fourth and
+fifth successful-mutation save triggers, and the home screen additionally
+renders the "Finished games" list from saved games filtered to
+`status: "finished"` with View results controls that reopen the read-only
+view through the same resume path.
 
 The podium celebration is the app's display-only modal layer. A successful
 confirm-finish sets a transient `state.podiumOpen` flag (reset wherever the
@@ -102,7 +115,8 @@ persistence slice is implemented.
   unless `HOST` or `PORT` is set.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
-  leaderboard, undo, save/resume, storage-failure, finish-game, and podium flows.
+  leaderboard, undo, save/resume, storage-failure, finish-game, podium, and
+  replay flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -110,11 +124,11 @@ persistence slice is implemented.
 
 - `index.html`: semantic shell and app mount point.
 - `src/main.js`: renders home/setup/active views (with the read-only finished
-  variant and the podium celebration modal), handles form events, and wires
-  score entry, selection, live totals, feedback, the undo-last-score control,
-  the finish-game confirmation, the home Finished games list, the storage-
-  health notices with the write-safety rule, and the dismissible podium
-  dialog with confetti.
+  variant, its Play again control, and the podium celebration modal), handles
+  form events, and wires score entry, selection, live totals, feedback, the
+  undo-last-score control, the finish-game confirmation, the home Finished
+  games list, the storage-health notices with the write-safety rule, and the
+  dismissible podium dialog with confetti.
 - `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
 - `src/score.js`: score-change bounds, signed integer parsing, safe-integer
   guarded application, latest-change undo, and the in-memory change log.
@@ -124,7 +138,10 @@ persistence slice is implemented.
   never collapsed).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
   `active` to `finished` with `missing-game`/`already-finished` guards and no
-  mutation or extra fields.
+  mutation or extra fields, and the `replayGame` transition that turns a
+  finished game into a brand-new active game through the roster path with
+  `missing-game`/`not-finished`/`invalid-roster` guards and presentation-only
+  copying.
 - `src/storage.js`: pure single-key local-storage persistence: versioned
   envelope load/save with injectable storage, result-code errors, per-entry
   crash guard with `droppedCount` reporting, upsert by id, and
@@ -140,7 +157,7 @@ persistence slice is implemented.
 - `scripts/roster-test.mjs`: pure roster behavior checks.
 - `scripts/standings-test.mjs`: pure leaderboard ranking checks.
 - `scripts/score-test.mjs`: pure scoring behavior checks.
-- `scripts/game-test.mjs`: pure game-lifecycle (finishGame) checks.
+- `scripts/game-test.mjs`: pure game-lifecycle (finishGame and replayGame) checks.
 - `scripts/storage-test.mjs`: pure storage persistence checks with in-memory
   storage stubs.
 - `scripts/browser-test-utils.mjs`: shared headless-Chrome CDP helpers used by
@@ -171,6 +188,14 @@ persistence slice is implemented.
   open/dismiss including under blocked writes and invalid-read suppression,
   reduced-motion confetti suppression via emulated media, and 320px overflow,
   target, and keyboard checks — using isolated headless Chrome.
+- `scripts/browser-play-again-test.mjs`: desktop/mobile replay checks — the
+  full MVP loop through replay with presentation-only copying and zero
+  totals/no undo history, separate stored games with distinct
+  `replay-game-*` ids and a byte-identical finished original across replay
+  and replay-game scoring, independent home listings after reload, repeated
+  replays from reopened finished games, the polite invalid-roster refusal,
+  blocked-write honesty with the accepted notice, and 320px/keyboard/focus
+  checks — using isolated headless Chrome.
 
 ## Boundaries
 
@@ -184,8 +209,9 @@ stored or logged. Repeated undo walks backward until the log is empty; an
 empty log is an announced no-op. Undo never touches `game.status`.
 
 Every successful game mutation (starting a game, saving points, a successful
-undo, and confirming Finish game) persists the active game — players, totals,
-and the full change log — under the single versioned `scorekeeper:games` key,
+undo, confirming Finish game, and replaying a finished game) persists the
+active game — players, totals, and the full change log — under the single
+versioned `scorekeeper:games` key,
 and the home screen lists saved games most-recently-updated first: active
 games with Resume controls under "Unfinished games", finished games with View
 results controls under "Finished games". Reloads therefore keep unfinished
@@ -209,4 +235,20 @@ podium celebration sits on top of that finished view as a display-only modal:
 it opens only on a successful confirm-finish (including under storage
 failures), shows every rank ≤ 3 player with ties never collapsed, dismisses
 back to the heading without changing anything, and never reopens on a mere
-revisit. Replay and saved-game deletion remain separate features.
+revisit.
+
+Replay closes the loop: the finished view's "Play again" control calls
+`replayGame`, which builds a brand-new active game through the roster path
+with game-scoped `replay-game-*` identities and copies only presentation —
+title, names, colors, markers, and creation order — while totals restart at
+zero and no change log or `updatedAt` carries over. The handler mirrors the
+resume pattern (slot replacement with transient-flag resets, then
+`persistActiveGameSnapshot()` as the fifth save trigger, then a render that
+lands in the scoring view with focus on the heading), leaves the finished
+original stored byte-identically and listed under "Finished games", and shows
+the replay under "Unfinished games". Guard failures
+(`missing-game`/`not-finished`/`invalid-roster`) create nothing and surface
+through the polite `#replay-feedback` region with code-only console
+diagnostics instead of silent no-ops, and the control lives only on the
+finished view — never inside the podium dialog or on home cards. Saved-game
+deletion remains a separate feature.

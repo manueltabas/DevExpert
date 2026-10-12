@@ -23,13 +23,13 @@
   totals, and the full `{ id, playerId, amount }` change log — plus one
   storage-owned `updatedAt` ISO stamp written only on the stored copy. Saves
   happen exactly on successful game mutations (starting a game, saving
-  points, a successful undo, and confirming Finish game); failed
-  validations, selection changes, feedback-only repaints, and no-op undos
-  never write. Never persist rank fields, and never remove saved games in a
-  slice that has no delete feature. Resume restores the saved game verbatim
-  as the active game, so undo works immediately and a successful undo
-  persists the shortened log — undone changes must never reappear after a
-  reload.
+  points, a successful undo, confirming Finish game, and replaying a
+  finished game); failed validations, selection changes, feedback-only
+  repaints, and no-op undos never write. Never persist rank fields, and
+  never remove saved games in a slice that has no delete feature. Resume
+  restores the saved game verbatim as the active game, so undo works
+  immediately and a successful undo persists the shortened log — undone
+  changes must never reappear after a reload.
 - Storage helpers (`src/storage.js`) must never throw: reads return
   `{ games, error, droppedCount }` with codes `unavailable` (missing/throwing
   storage) and `invalid` (unparseable, wrong-version, or wrong-shape payload;
@@ -86,6 +86,26 @@
   exactly the same read-only guarantees. Finished games are listed only in
   the Finished games panel with View results controls; the Unfinished panel
   filter stays `status === "active"`.
+- Replaying a finished game must go through `replayGame` in `src/game.js`,
+  which builds the rematch through the `createGame` roster path with
+  game-scoped identities (the `replay-game` id seed, so replay ids can never
+  collide with setup-created `active-game-*` ids) and copies only
+  presentation — title, names, colors, markers, and creation order — never
+  totals, the change log, or `updatedAt`. The input finished game must never
+  be mutated, and its stored entry must never be re-persisted: it stays
+  byte-identical across the replay and every later mutation of the replay,
+  because `upsertSavedGame` keys on the new id. Replay persists through
+  `persistActiveGameSnapshot()` as the fifth successful-mutation save
+  trigger (starting a game, saving points, a successful undo, confirming
+  Finish game, and replaying) and obeys the storage-failure rules above: no
+  new failure paths, no phantom cards, code-only diagnostics. The "Play
+  again" control lives only on the finished view below the standings —
+  never inside the podium dialog or on home cards — replaces the single
+  active-game slot exactly like resume (previously viewed games stay stored),
+  lands focus on the new game's heading, and guard failures
+  (`missing-game`/`not-finished`/`invalid-roster`) create nothing, touch no
+  storage, and surface through a polite feedback region instead of silent
+  no-ops.
 - The podium celebration is display only and must never touch saved data: it
   is derived at render time from `podiumRows` (every player whose competition
   rank is ≤ 3, ties never collapsed, empty rank groups omitted, rank ≥ 4

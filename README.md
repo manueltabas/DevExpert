@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, and podium flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, and replay flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -40,8 +40,9 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:storage-failure`: run only the Chrome storage-failure feedback checks.
 - `npm run test:browser:finish-game`: run only the Chrome finish/read-only standings checks.
 - `npm run test:browser:podium`: run only the Chrome podium celebration checks.
+- `npm run test:browser:play-again`: run only the Chrome replay interaction checks.
 - `npm run test:standings`: run only the ranking unit checks.
-- `npm run test:game`: run only the game-lifecycle (finishGame) unit checks.
+- `npm run test:game`: run only the game-lifecycle (finishGame/replayGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
@@ -98,6 +99,21 @@ heading, the standings remain unchanged, and the celebration never repeats
 when the finished game is reopened or reloaded. The celebration is display
 only — it writes nothing and the saved game gains no new fields.
 
+One more round is one click away: the finished view's **Play again** button,
+below the standings, creates a separate new active game from the finished
+game's roster — the same title and the same names, colors, and numbered
+markers, but brand-new game and player identities, every total at zero, and
+no scores or undo history carried over (undoing right away announces
+"Nothing to undo yet."). The rematch opens straight into scoring with the
+first player selected and is saved immediately like every other mutation, so
+it appears under **Unfinished games** while the finished original stays saved
+and read-only under **Finished games** — after any reload, both games are
+listed independently with their own totals, history, and timestamps. Guard
+failures stay visible: an unusable stored roster shows "This game's saved
+players can't be replayed." in a polite status region instead of silently
+doing nothing, and blocked storage keeps the replay working in memory with
+the usual write notice.
+
 Storage problems are never silent. When a save fails (blocked or full
 storage), when the stored data is unreadable or incompatible, or when
 individual saved entries are unusable, a polite status notice explains it in
@@ -112,5 +128,5 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `celebrate-podium` is accepted
-and merged, the next feature is `play-again`.
+Run `$feature-flow` one feature at a time. After `play-again` is accepted and
+merged, the next feature is `restrict-score-entry-input`.

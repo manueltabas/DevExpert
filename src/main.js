@@ -18,7 +18,7 @@ import {
   undoLastScoreChange
 } from "./score.js";
 import { podiumRows, rankPlayers } from "./standings.js";
-import { finishGame } from "./game.js";
+import { finishGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
   orderSavedGamesForDisplay,
@@ -37,6 +37,7 @@ const state = {
   scoreFeedback: null,
   finishPromptOpen: false,
   podiumOpen: false,
+  replayFeedback: null,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -56,7 +57,9 @@ const SCORE_ERROR_MESSAGES = {
   "not-safe": "That change would create an unsafe total. Try a smaller amount.",
   "nothing-to-undo": "Nothing to undo yet.",
   "missing-game": "No open game to finish.",
-  "already-finished": "This game is already finished."
+  "already-finished": "This game is already finished.",
+  "not-finished": "Only finished games can be replayed.",
+  "invalid-roster": "This game's saved players can't be replayed."
 };
 
 const SCORE_FEEDBACK_CLASS_NAMES = {
@@ -349,6 +352,7 @@ function handleResume(gameId) {
   state.scoreFeedback = null;
   state.finishPromptOpen = false;
   state.podiumOpen = false;
+  state.replayFeedback = null;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -652,6 +656,11 @@ function renderFinishedGame(game) {
           <ol class="active-roster" aria-label="Active game players">
             ${rankPlayers(game).map((row) => renderFinishedPlayer(row.player, row.rank)).join("")}
           </ol>
+
+          <div class="replay-section">
+            <button type="button" class="primary-action" data-action="play-again">Play again</button>
+            <div id="replay-feedback" class="form-feedback" aria-live="polite">${renderReplayFeedback()}</div>
+          </div>
         </div>
       </div>
     </section>
@@ -835,6 +844,14 @@ function renderScoreFeedback() {
   return `<p class="${scoreFeedbackClassName(state.scoreFeedback.kind)}">${escapeHtml(state.scoreFeedback.message)}</p>`;
 }
 
+function renderReplayFeedback() {
+  if (!state.replayFeedback) {
+    return "";
+  }
+
+  return `<p class="${scoreFeedbackClassName(state.replayFeedback.kind)}">${escapeHtml(state.replayFeedback.message)}</p>`;
+}
+
 function scoreFeedbackClassName(kind) {
   return SCORE_FEEDBACK_CLASS_NAMES[kind] ?? SCORE_FEEDBACK_CLASS_NAMES.success;
 }
@@ -846,6 +863,7 @@ function bindActiveEvents() {
     state.scoreFeedback = null;
     state.finishPromptOpen = false;
     state.podiumOpen = false;
+    state.replayFeedback = null;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
   });
@@ -890,6 +908,10 @@ function bindActiveEvents() {
   appRoot.querySelector("[data-action='confirm-finish']")?.addEventListener("click", () => {
     handleFinishGame();
   });
+
+  appRoot.querySelector("[data-action='play-again']")?.addEventListener("click", () => {
+    handlePlayAgain();
+  });
 }
 
 function handleFinishGame() {
@@ -915,6 +937,31 @@ function handleFinishGame() {
   if (!state.podiumOpen) {
     appRoot.querySelector("[data-active-heading]")?.focus();
   }
+}
+
+function handlePlayAgain() {
+  const result = replayGame({ game: state.activeGame });
+
+  if (result.error || !result.game) {
+    state.replayFeedback = {
+      kind: "error",
+      message: SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["not-finished"]
+    };
+    console.warn("Game replay failed:", result.error);
+    paintReplayFeedback();
+    return;
+  }
+
+  state.activeGame = result.game;
+  state.selectedPlayerId = result.game.players[0]?.id ?? null;
+  state.scoreFeedback = null;
+  state.finishPromptOpen = false;
+  state.podiumOpen = false;
+  state.replayFeedback = null;
+  persistActiveGameSnapshot();
+  render();
+  paintStorageNotice();
+  appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
 function handleScoreSubmit() {
@@ -1044,6 +1091,25 @@ function paintScoreFeedback() {
   region.append(message);
 }
 
+function paintReplayFeedback() {
+  const region = appRoot.querySelector("#replay-feedback");
+
+  if (!region) {
+    return;
+  }
+
+  region.replaceChildren();
+
+  if (!state.replayFeedback) {
+    return;
+  }
+
+  const message = document.createElement("p");
+  message.className = scoreFeedbackClassName(state.replayFeedback.kind);
+  message.textContent = state.replayFeedback.message;
+  region.append(message);
+}
+
 function resetSetup() {
   state.title = FALLBACK_TITLE;
   state.rows = createSetupRows();
@@ -1052,6 +1118,7 @@ function resetSetup() {
   state.scoreFeedback = null;
   state.finishPromptOpen = false;
   state.podiumOpen = false;
+  state.replayFeedback = null;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;

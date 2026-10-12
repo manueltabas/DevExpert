@@ -2,20 +2,127 @@
 
 ## Current verified state
 
-- Phase: `celebrate-podium` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `play-again` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, finish/read-only standings, and the podium celebration).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, finish/read-only standings, the podium celebration, and replay).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `celebrate-podium` PR; then plan `play-again` from updated `main`.
+- Next step: merge the `play-again` PR; then plan `restrict-score-entry-input` from updated `main`.
 - Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`,
   `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`,
-  `handle-storage-failure`, `finish-game`, and `celebrate-podium` are
-  `accepted`; remaining slices are `not_started`.
-- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
+  `handle-storage-failure`, `finish-game`, `celebrate-podium`, and
+  `play-again` are `accepted`; `restrict-score-entry-input` is the only
+  remaining slice.
+- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction (one transient Chrome-launch timeout during a CI-mode gate run passed on immediate rerun).
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Replay implementation (play-again)
+
+- Added `src/game.js`: pure `replayGame({ game, now = new Date() })` alongside
+  `finishGame` (it imports `createGame`/`FALLBACK_TITLE` from `./roster.js` —
+  a new edge to the leaf roster module). Guards: missing/invalid game or
+  non-array players → `{ game: null, error: "missing-game" }`; any
+  non-`"finished"` status → `not-finished`; roster validation failures from
+  `createGame` (blank/overlong names, unknown/missing colors, non-string
+  names, null entries, <2 or >20 players — reachable only via hand-corrupted
+  stored data) → `invalid-roster` without throwing. Success maps the finished
+  players to rows and calls `createGame({ title, rows, now, idSeed:
+  "replay-game" })`, so ids are `replay-game-<timestamp>` and players
+  `replay-game-player-N` — structurally new and unable to collide with
+  `active-game-*`. The helper restores each new player's `marker` (nonempty
+  string) and `order` (integer) from the original at the same index with the
+  regenerated values as fallbacks; non-string titles fall back to
+  `FALLBACK_TITLE`; the result has `status: "active"`, zero totals, and no
+  `changes`/`updatedAt`; the input is never mutated. `GAME_ERROR_CODES` is
+  now exactly `["missing-game", "already-finished", "not-finished",
+  "invalid-roster"]`.
+- Extended `src/main.js`: `state.replayFeedback` (reset wherever the other
+  transient flags reset — `handleResume`, back-home, `resetSetup` — and in
+  the handler); `renderFinishedGame` renders a `.replay-section` below the
+  standings `<ol>` inside the roster panel with one `type="button"`
+  `primary-action` "Play again" (`data-action="play-again"`, visible text as
+  the accessible name) and the `#replay-feedback` `aria-live="polite"` region
+  (inline-rendered like `#score-feedback`); `handlePlayAgain()` guards
+  visibly (message + `console.warn("Game replay failed:", code)` +
+  `paintReplayFeedback()` without re-render), and on success mirrors
+  `handleResume`: slot replacement, transient resets (`selectedPlayerId` =
+  first new player, `scoreFeedback`/`finishPromptOpen`/`podiumOpen`/
+  `replayFeedback` = null), the unchanged `persistActiveGameSnapshot()` —
+  the fifth successful-mutation save trigger — then `render()`,
+  `paintStorageNotice()`, and focus on `[data-active-heading]`.
+  `SCORE_ERROR_MESSAGES` gained `not-finished` ("Only finished games can be
+  replayed.") and `invalid-roster` ("This game's saved players can't be
+  replayed."); `paintReplayFeedback()` mirrors `paintScoreFeedback`; the
+  optional-chained `play-again` listener in `bindActiveEvents` leaves the
+  active view, home cards, and podium dialog untouched.
+- Styled `src/styles.css`: `.replay-section` only (top-border separation and
+  16px rhythm mirroring `.finish-section`); the button reuses
+  `.primary-action` (≥44px) as-is; no new tokens or motion.
+- Tests: extended `scripts/game-test.mjs` with the `replayGame` guard,
+  copy-contract, marker/order-restoration-with-fallbacks, non-string-title,
+  invalid-roster (8 corrupted shapes), immutability, and 20-player cases plus
+  the one honest `GAME_ERROR_CODES` exact-list update; new
+  `scripts/browser-play-again-test.mjs` with four isolated Chrome sessions —
+  A desktop full MVP flow through replay with byte-identical
+  original-entry checks across replay AND replay-game scoring, B
+  reopen-and-repeated replays (3 distinct stored games listed once each, no
+  re-celebration), C seeded corrupted + valid finished games under blocked
+  writes (visible `invalid-roster` refusal, in-memory replay/scoring/undo,
+  accepted role=status write notice, byte-identical payload, no phantom
+  cards, code-only warnings), and D the 320×720 full loop with real-key
+  Tab/Space activation, visible focus, ≥44px target, role=status regions, no
+  overflow, and post-reload separation. Wired `test:browser:play-again` into
+  `package.json`'s `test` chain and added the new script to `init.sh`'s
+  `node --check` list. No new `src/*` module, so the static-server allowlist,
+  smoke assets, and required-file list are unchanged.
+- Fixed during self-verification: two test-authoring bugs (the 20-player
+  unit assertion expected a wrong title; the mobile Tab walk assumed
+  `back-home` precedes the heading in Tab order — it precedes it in DOM, so
+  forward Tab from the heading reaches Play again first); the corrupted
+  roster's rendered name order follows rank (Lonely 3 before the blank-name
+  0), so that assertion was corrected to DOM order. No product-code failures
+  were found by the suites.
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:game` passed with the replay cases; `npm run
+  test:browser:play-again` passed on real headless Chrome across all four
+  sessions (presentation copies token-by-token, zero totals at shared rank 1,
+  "Nothing to undo yet.", distinct `replay-game-*`/`active-game-*` ids,
+  byte-identical finished original across replay and replay-game scoring,
+  independent home listings after reload, repeated replays, the polite
+  corrupted-roster refusal, blocked-write honesty with unchanged notice copy
+  and code-only warnings, 320px/keyboard/focus checks, zero uncaught console
+  errors); `npm run test` passed end to end with all nine browser suites
+  chained and the eight existing suites unmodified; `./init.sh` and
+  `CI=true ./init.sh` passed (exit 0) and exited without starting a server —
+  one CI-mode attempt failed transiently with "Timed out waiting for Chrome
+  DevTools endpoint." launching Chrome for the podium suite (a 30s launch
+  timeout, no assertion failure involved); the immediate rerun passed fully.
+  The `npm run dev` probe returned 200 for `/`, `/src/game.js`,
+  `/src/main.js`, and `/src/styles.css` and 404 for `/AGENTS.md`.
+  Screenshots under
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-play-again/`
+  (6 files) could not be opened for visual inspection this session because
+  temp-directory reads are permission-blocked; layout, visibility, overflow,
+  target sizes, focus outlines, and live-region roles were asserted
+  programmatically. The manual real-browser pass is covered by the four
+  automated real-Chrome sessions at 1280×800 and 320×720 with real-key
+  Tab/Space/Escape walks.
+- Updated README (replay behavior + new command + next-feature pointer),
+  ARCHITECTURE.md (replayGame boundary, finished-view control and feedback
+  region, fifth save trigger, home outcomes, new suite), and CONSTRAINTS.md
+  (durable rules: replay only via `replayGame` with presentation-only
+  copying and a byte-identical stored original, the fifth save trigger under
+  the storage-failure rules, control placement, and visible guards).
+- Next: run independent `$feature-validator` for `play-again`; after
+  acceptance, commit `feat: complete play-again`, push `codex/play-again`,
+  and open the PR (the untracked spec file `docs/specs/play-again.md`
+  belongs to this feature's PR).
+- Independent validator verdict: `accept`. Reran the game and play-again
+  suites, two clean CI gate runs (flake did not reproduce; launch timeout,
+  not an assertion), HTTP boundary probes, and a full-diff conformance review
+  confirming core modules untouched; no security findings.
 
 ### 2026-10-12 — Podium celebration implementation (celebrate-podium)
 
