@@ -66,6 +66,9 @@ node --check scripts/browser-storage-failure-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-finish-game-test.mjs'
 node --check scripts/browser-finish-game-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-podium-test.mjs'
+node --check scripts/browser-podium-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 

@@ -86,6 +86,27 @@
   exactly the same read-only guarantees. Finished games are listed only in
   the Finished games panel with View results controls; the Unfinished panel
   filter stays `status === "active"`.
+- The podium celebration is display only and must never touch saved data: it
+  is derived at render time from `podiumRows` (every player whose competition
+  rank is ≤ 3, ties never collapsed, empty rank groups omitted, rank ≥ 4
+  players excluded from the modal but visible in the standings behind it),
+  opens only on a successful confirm-finish — including under storage failure
+  or invalid-read suppression — and never opens when a finished game is
+  merely resumed, viewed, or reloaded. Opening and dismissing must trigger no
+  write: no `persistActiveGameSnapshot()`, no `saveGames` call, no mutation
+  of `state.savedGames`, and no persisted podium/celebration fields; the
+  stored payload must stay byte-identical across open and dismiss.
+- Modal dialogs must dismiss reliably without depending on the queued dialog
+  `close` event alone: Chrome dispatches `close` asynchronously and can delay
+  or starve it on hidden pages, so dismissal paths (Close control, Escape's
+  `cancel`, backdrop click) must funnel through one synchronous idempotent
+  cleanup — with the `close` listener kept as a fallback — that restores the
+  underlying view and returns focus to it. Modal dialogs must be labelled and
+  described (`aria-labelledby`/`aria-describedby`), open with focus inside,
+  keep decorative layers `aria-hidden` and `pointer-events: none`, and any
+  celebration animation must be CSS-only, finite (at most ~3.5s per piece),
+  and fully suppressed with `display: none` under
+  `prefers-reduced-motion: reduce`.
 - Undo always reverses the newest `{ id, playerId, amount }` entry in
   `game.changes`: subtract that change's amount from its recipient's total and
   drop the entry, one change per activation, with no depth limit. A missing,
