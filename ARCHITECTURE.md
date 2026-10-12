@@ -7,14 +7,16 @@ entry point, `index.html`, with `src/styles.css` for the responsive visual
 system and `src/main.js` for home, roster setup, and active-game views.
 State lives in memory in the browser module. `src/roster.js` contains pure
 roster validation and game creation helpers. `src/score.js` contains pure
-scoring helpers: signed integer parsing and `applyScoreChange`, which updates
+scoring helpers: signed integer parsing, `applyScoreChange`, which updates
 one player's total and appends `{ id, playerId, amount }` to the in-memory
-`game.changes` log. `src/standings.js` contains the pure ranking helper
+`game.changes` log, and `undoLastScoreChange`, which pops the newest log
+entry, restores that player's total, and returns a new game object without
+mutating the input. `src/standings.js` contains the pure ranking helper
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
 creation-order ties. `src/main.js` calls it at render time only; no rank is
 stored on players, games, or the change log. Reloading clears the active game
-and its change log.
+and its change log, so undo does not survive a reload.
 
 There is no backend, account service, database, build step, or deployment
 configuration in this repository. Later features should keep product behavior in
@@ -26,8 +28,8 @@ persistence slice is implemented.
 - `npm run dev`: starts the local static HTTP server at `http://127.0.0.1:4173/`
   unless `HOST` or `PORT` is set.
 - `npm run test`: runs roster, standings, and score unit checks, HTTP smoke
-  checks, and Chrome browser interaction checks for the roster, scoring, and
-  leaderboard flows.
+  checks, and Chrome browser interaction checks for the roster, scoring,
+  leaderboard, and undo flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -35,10 +37,10 @@ persistence slice is implemented.
 
 - `index.html`: semantic shell and app mount point.
 - `src/main.js`: renders home/setup/active views, handles form events, and wires
-  score entry, selection, live totals, and feedback.
+  score entry, selection, live totals, feedback, and the undo-last-score control.
 - `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
 - `src/score.js`: score-change bounds, signed integer parsing, safe-integer
-  guarded application, and the in-memory change log.
+  guarded application, latest-change undo, and the in-memory change log.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`.
 - `src/styles.css`: design tokens, layout, responsive rules, focus styles, and
@@ -57,12 +59,17 @@ persistence slice is implemented.
 - `scripts/browser-roster-test.mjs`: desktop/mobile roster interaction checks using isolated headless Chrome.
 - `scripts/browser-score-test.mjs`: desktop/mobile scoring interaction checks using isolated headless Chrome.
 - `scripts/browser-rank-test.mjs`: desktop/mobile leaderboard ranking interaction checks using isolated headless Chrome.
+- `scripts/browser-undo-test.mjs`: desktop/mobile undo interaction checks using isolated headless Chrome.
 
 ## Boundaries
 
 The app creates an active game with named players and zero totals. It accepts
 signed integer score changes on one player, records an in-memory change log,
-and renders a live leaderboard with descending totals, shared competition
-ranks, and creation-order ties. Ranks exist only while rendering; no rank is
-stored or logged. It does not offer undo, persist data, or lock finished games
-yet. Undo, history, and finalization remain separate features.
+renders a live leaderboard with descending totals, shared competition ranks,
+and creation-order ties, and reverses the latest change on demand: each undo
+pops the newest log entry, restores that recipient's total, and lets ranks
+re-derive at render time. Ranks exist only while rendering; no rank is
+stored or logged. Repeated undo walks backward until the log is empty; an
+empty log is an announced no-op. Undo never touches `game.status`. It does not
+persist data, keep undo across reloads, or lock finished games yet. History,
+finalization, and replay remain separate features.

@@ -42,6 +42,9 @@ node --check scripts/browser-rank-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-score-test.mjs'
 node --check scripts/browser-score-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-undo-test.mjs'
+node --check scripts/browser-undo-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 

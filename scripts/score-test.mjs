@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
-import { MAX_SCORE_ABS, applyScoreChange, parseScoreAmount } from "../src/score.js";
+import {
+  MAX_SCORE_ABS,
+  SCORE_ERROR_CODES,
+  applyScoreChange,
+  parseScoreAmount,
+  undoLastScoreChange
+} from "../src/score.js";
 
 assert.equal(MAX_SCORE_ABS, 1_000_000);
 
@@ -129,4 +135,79 @@ const rejected = applyScoreChange({ game: second.game, playerId: game.players[0]
 assert.equal(rejected.game, null);
 assert.deepEqual(second.game, snapshot);
 
-console.log("Score tests passed: parse error codes, signed bounds, zero rejection, change log, safe-integer guard, and immutability.");
+// undoLastScoreChange: error code is registered
+assert.ok(SCORE_ERROR_CODES.includes("nothing-to-undo"));
+
+// undoLastScoreChange: nothing to undo for missing/empty/non-array logs
+assert.deepEqual(undoLastScoreChange({ game: null }), { game: null, undone: null, error: "nothing-to-undo" });
+assert.deepEqual(undoLastScoreChange({ game: undefined }), { game: null, undone: null, error: "nothing-to-undo" });
+assert.deepEqual(undoLastScoreChange({ game }), { game: null, undone: null, error: "nothing-to-undo" });
+assert.deepEqual(undoLastScoreChange({ game: { ...game, changes: [] } }), { game: null, undone: null, error: "nothing-to-undo" });
+assert.deepEqual(undoLastScoreChange({ game: { ...game, changes: "not-a-list" } }), { game: null, undone: null, error: "nothing-to-undo" });
+
+// undoLastScoreChange: reverses only the latest change and its recipient
+// samScored.game: log [+10 Alex, -3 Alex, +5 Sam], totals Alex 7, Sam 5
+const undoSnapshot = structuredClone(samScored.game);
+const undoLatest = undoLastScoreChange({ game: samScored.game });
+assert.equal(undoLatest.error, null);
+assert.deepEqual(undoLatest.undone, samScored.game.changes[samScored.game.changes.length - 1]);
+assert.equal(undoLatest.undone.playerId, game.players[1].id);
+assert.equal(undoLatest.undone.amount, 5);
+assert.equal(undoLatest.game.players[1].total, 0, "the latest recipient's total must be restored");
+assert.equal(undoLatest.game.players[0].total, 7, "earlier recipients must be untouched");
+assert.equal(undoLatest.game.changes.length, 2);
+assert.deepEqual(undoLatest.game.changes, samScored.game.changes.slice(0, -1));
+assert.equal(undoLatest.game.status, "active", "undo must not touch game.status");
+assert.deepEqual(Object.keys(undoLatest.game).sort(), Object.keys(samScored.game).sort());
+assert.deepEqual(samScored.game, undoSnapshot, "the input game must never be mutated");
+
+// undoLastScoreChange: no rank fields are written anywhere
+assert.ok(undoLatest.game.players.every((player) => !("rank" in player)));
+for (const change of undoLatest.game.changes) {
+  assert.deepEqual(Object.keys(change).sort(), ["amount", "id", "playerId"]);
+}
+
+// undoLastScoreChange: repeated undo drains the log in reverse order, then reports nothing-to-undo
+const undoTwo = undoLastScoreChange({ game: undoLatest.game });
+assert.equal(undoTwo.error, null);
+assert.equal(undoTwo.undone.amount, -3);
+assert.equal(undoTwo.undone.playerId, game.players[0].id);
+assert.equal(undoTwo.game.players[0].total, 10, "undoing -3 restores Alex to 10");
+assert.equal(undoTwo.game.players[1].total, 0);
+assert.equal(undoTwo.game.changes.length, 1);
+
+const undoThree = undoLastScoreChange({ game: undoTwo.game });
+assert.equal(undoThree.error, null);
+assert.equal(undoThree.undone.amount, 10);
+assert.equal(undoThree.game.players[0].total, 0, "draining the log returns Alex to 0");
+assert.equal(undoThree.game.changes.length, 0);
+
+const undoDrained = undoLastScoreChange({ game: undoThree.game });
+assert.deepEqual(undoDrained, { game: null, undone: null, error: "nothing-to-undo" });
+assert.equal(undoThree.game.changes.length, 0);
+
+// undoLastScoreChange: a negative change is reversed by subtracting its amount
+// negativeTotal.game: Sam at -10 with [+10, -3, +5, -5, -10] logged
+const undoNegative = undoLastScoreChange({ game: negativeTotal.game });
+assert.equal(undoNegative.error, null);
+assert.equal(undoNegative.undone.amount, -10);
+assert.equal(undoNegative.game.players[1].total, 0, "undoing -10 restores Sam to the prior total 0");
+assert.equal(undoNegative.game.players[0].total, 7);
+
+// undoLastScoreChange: unknown playerId in the log is rejected defensively
+const unknownChange = { id: "change-x", playerId: "ghost-player", amount: 5 };
+const unknownLogGame = { ...game, changes: [unknownChange] };
+assert.equal(undoLastScoreChange({ game: unknownLogGame }).error, "unknown-player");
+assert.deepEqual(unknownLogGame.changes, [unknownChange]);
+
+// undoLastScoreChange: unsafe restored totals are rejected defensively
+const unsafeUndoGame = {
+  ...samScored.game,
+  changes: [{ id: "change-unsafe", playerId: game.players[0].id, amount: -1 }],
+  players: game.players.map((player) =>
+    player.id === game.players[0].id ? { ...player, total: Number.MAX_SAFE_INTEGER } : player
+  )
+};
+assert.equal(undoLastScoreChange({ game: unsafeUndoGame }).error, "not-safe");
+
+console.log("Score tests passed: parse error codes, signed bounds, zero rejection, change log, safe-integer guard, immutability, and latest-change undo.");

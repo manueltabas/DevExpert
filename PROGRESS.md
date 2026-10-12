@@ -2,17 +2,77 @@
 
 ## Current verified state
 
-- Phase: `rank-leaderboard` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `undo-latest-score` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score units, HTTP smoke, and Chrome browser checks (roster, scoring, and ranking).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score (with undo) units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, and undo).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `rank-leaderboard` PR; then plan `undo-latest-score` from updated `main`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, and `rank-leaderboard` are `accepted`; remaining slices are `not_started`.
+- Next step: merge the `undo-latest-score` PR; then plan `resume-saved-game` from updated `main`.
+- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, and `undo-latest-score` are `accepted`; remaining slices are `not_started`.
 - Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Latest-change undo implementation (undo-latest-score)
+
+- Added `undoLastScoreChange({ game })` to `src/score.js` (no new module): it
+  treats a missing, empty, or non-array `game.changes` (fresh `createGame`
+  games have no `changes` property) as `{ game: null, undone: null, error:
+  "nothing-to-undo" }`; otherwise it pops the newest `{ id, playerId, amount }`
+  entry, finds the recipient (defensive `unknown-player`), computes
+  `player.total - change.amount` under a safe-integer guard (`not-safe`), and
+  returns a new game object with the restored total and
+  `changes.slice(0, -1)`. The input game is never mutated; `game.status`,
+  `player.order`, and all other fields are untouched; no rank is stored.
+  `"nothing-to-undo"` joined `SCORE_ERROR_CODES`.
+- Extended `src/main.js`: a `type="button"` `secondary-action` control labeled
+  "Undo last score" (`data-action="undo-last-score"`) sits in the score-entry
+  form directly after "Save points"; `handleUndo` announces
+  "Undid {amount} points for {name}. New total: {total}. Rank: {rank}." on
+  success (raw signed amount, rank from `rankPlayers(result.game)`), re-renders,
+  and refocuses the undo button so repeated Enter/Space presses walk backward.
+  An empty-log activation sets a new third feedback kind `info` with
+  "Nothing to undo yet." and repaints `#score-feedback` only — no re-render and
+  no focus change; other errors reuse the existing error repaint. Selection
+  (`selectedPlayerId`) and row `aria-pressed` are never changed by undo.
+- Styled `src/styles.css`: new `.info-message` in muted `var(--muted)` so the
+  no-op does not read as a failure; the undo button reuses `.secondary-action`
+  (min-height 44px) with no layout changes.
+- Added `scripts/browser-undo-test.mjs` (CDP, following the rank-test pattern)
+  and undo unit cases in `scripts/score-test.mjs`; wired `test:browser:undo`
+  into `package.json`'s `test` chain and added the new script to `init.sh`
+  syntax checks. No static-server/smoke/allowlist changes: `src/score.js` was
+  already public.
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:score` passed (existing cases plus latest-only reversal,
+  negative-amount undo, drain-then-nothing-to-undo, missing/empty/non-array
+  logs, immutability snapshots, status/other-field preservation, and no rank
+  writes); `npm run test` passed end to end with the new undo suite chained;
+  `./init.sh` and `CI=true ./init.sh` passed and exited without starting a
+  server; `npm run dev` probe returned 200 for `/`, `/src/score.js`, and
+  `/src/main.js` and 404 for `/AGENTS.md`. Browser scenarios covered Scenarios
+  1–6: latest-recipient-only restore with unchanged selection/`aria-pressed`
+  and undo-button refocus, info no-op with sentinel-DOM proof of no re-render
+  and muted (non-error) styling, negative-amount undo with the raw signed
+  amount announced, three keyboard-Enter undos walking back then stopping
+  safely, overtake order/rank reversion, and 320px checks (button visible
+  below Save points, ≥44px target, visible focus, keyboard operable, no
+  overflow). `localStorage.length === 0` and no console errors throughout.
+  Screenshots: `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-undo-latest-score/desktop-undo-latest.png`
+  and `mobile-undo-320px.png` (generated but not visually openable this
+  session; readability asserted programmatically).
+- Fixed during self-verification: the first browser run expected the negative
+  scenario's totals in player order instead of DOM order (rows sort descending,
+  so Sam 0 renders before Alex −3); corrected the assertion to DOM order.
+- Updated README, ARCHITECTURE.md (undo boundary sentence revised),
+  CONSTRAINTS.md (durable undo rule), and feature evidence.
+- Next: run independent `$feature-validator` for `undo-latest-score`; after
+  acceptance, commit and open the PR.
+- Independent validator verdict: `accept`. Reran both gate modes, the score and
+  browser-undo suites, HTTP boundary probes, and 10 extra edge-case probe
+  groups (drain-to-empty, deep immutability, status/order preservation, rank
+  interop); no security findings; evidence claims reproduced exactly.
 
 ### 2026-10-12 — Leaderboard ranking implementation (rank-leaderboard)
 
