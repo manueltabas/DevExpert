@@ -11,6 +11,14 @@ export const SCORE_ERROR_CODES = [
   "nothing-to-undo"
 ];
 
+export function isPlainIntegerText(text) {
+  return /^[+-]?\d+$/.test(String(text).trim());
+}
+
+export function isPlainScoreDraft(text) {
+  return /^[+-]?\d*\.?\d*$/.test(String(text));
+}
+
 export function parseScoreAmount(raw) {
   if (raw === null || raw === undefined) {
     return { error: "empty" };
@@ -38,6 +46,16 @@ export function parseScoreAmount(raw) {
 
   if (Math.abs(amount) > MAX_SCORE_ABS) {
     return { error: "out-of-range" };
+  }
+
+  // Plain-format gate, ordered after the finite/integer/zero/range checks so
+  // every existing error mapping is preserved: only plain signed integer text
+  // (e.g. "10", "-3", "+7") can save. Scientific notation ("1e3"), hex
+  // ("0x10"), and trailing-dot forms ("10.") parse to valid in-range integers
+  // but are no longer savable — the entry guard blocks them at the field, and
+  // this gate rejects anything that reaches the parser by another path.
+  if (!isPlainIntegerText(text)) {
+    return { error: "not-a-number" };
   }
 
   return { amount };

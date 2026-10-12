@@ -7,7 +7,11 @@ entry point, `index.html`, with `src/styles.css` for the responsive visual
 system and `src/main.js` for home, roster setup, and active-game views.
 State lives in memory in the browser module. `src/roster.js` contains pure
 roster validation and game creation helpers. `src/score.js` contains pure
-scoring helpers: signed integer parsing, `applyScoreChange`, which updates
+scoring helpers: signed integer parsing restricted to plain signed integer
+text — `parseScoreAmount` runs a final plain-format gate after the
+finite/integer/zero/range checks, so exact-integer non-plain text such as
+`1e3`, `0x10`, or `10.` returns the existing `not-a-number` code instead of
+saving — plus `applyScoreChange`, which updates
 one player's total and appends `{ id, playerId, amount }` to the in-memory
 `game.changes` log, and `undoLastScoreChange`, which pops the newest log
 entry, restores that player's total, and returns a new game object without
@@ -127,11 +131,14 @@ persistence slice is implemented.
   variant, its Play again control, and the podium celebration modal), handles
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
-  games list, the storage-health notices with the write-safety rule, and the
-  dismissible podium dialog with confetti.
+  games list, the storage-health notices with the write-safety rule, the
+  dismissible podium dialog with confetti, and the `beforeinput` entry guard
+  that keeps the score field to plain signed-integer drafts.
 - `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
-- `src/score.js`: score-change bounds, signed integer parsing, safe-integer
-  guarded application, latest-change undo, and the in-memory change log.
+- `src/score.js`: score-change bounds, plain signed integer parsing (the
+  `isPlainScoreDraft` entry pattern and the final plain-format gate in
+  `parseScoreAmount`), safe-integer guarded application, latest-change undo,
+  and the in-memory change log.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
   plus the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
@@ -207,6 +214,19 @@ pops the newest log entry, restores that recipient's total, and lets ranks
 re-derive at render time. Ranks exist only while rendering; no rank is
 stored or logged. Repeated undo walks backward until the log is empty; an
 empty log is an announced no-op. Undo never touches `game.status`.
+
+Score entry is guarded at both layers so only plain signed integers can be
+entered and saved. A `beforeinput` listener on `#score-amount` computes the
+prospective value of every insertion (falling back to the inserted data alone
+on inputs without a selection API) and cancels anything that is not a plain
+signed-integer draft — letters such as `e` never enter the field by typing,
+paste, drop, or IME, while deletions, undo/redo insertions, and data-less
+insertions are never blocked and blocked characters stay silent. The same
+contract is enforced at save: `parseScoreAmount`'s plain-format gate rejects
+scientific notation and other exact-integer non-plain text with the existing
+`not-a-number` message, so `1e3` (and equivalents) are unsavable through any
+path. No value is ever silently rewritten; a transient decimal such as `2.5`
+still reaches the save-side decimals message exactly as accepted.
 
 Every successful game mutation (starting a game, saving points, a successful
 undo, confirming Finish game, and replaying a finished game) persists the

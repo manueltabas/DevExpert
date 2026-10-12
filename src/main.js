@@ -14,6 +14,7 @@ import {
 import {
   MAX_SCORE_ABS,
   applyScoreChange,
+  isPlainScoreDraft,
   parseScoreAmount,
   undoLastScoreChange
 } from "./score.js";
@@ -888,6 +889,8 @@ function bindActiveEvents() {
     handleScoreSubmit();
   });
 
+  appRoot.querySelector("#score-amount")?.addEventListener("beforeinput", guardScoreEntryInput);
+
   appRoot.querySelector("[data-action='undo-last-score']")?.addEventListener("click", () => {
     handleUndo();
   });
@@ -912,6 +915,37 @@ function bindActiveEvents() {
   appRoot.querySelector("[data-action='play-again']")?.addEventListener("click", () => {
     handlePlayAgain();
   });
+}
+
+function guardScoreEntryInput(event) {
+  // Entry guard for the score field: only plain signed-integer drafts may be
+  // inserted (letters like "e" can never enter or be pasted). Deletion and
+  // undo/redo/history input types are never blocked, and insertion types
+  // without string data (e.g. some autofill replacements) are left to the
+  // save-side plain-format gate in parseScoreAmount.
+  if (typeof event.inputType === "string" && !event.inputType.startsWith("insert")) {
+    return;
+  }
+
+  if (typeof event.data !== "string") {
+    return;
+  }
+
+  const input = event.target;
+  const value = typeof input.value === "string" ? input.value : "";
+  const start = typeof input.selectionStart === "number" ? input.selectionStart : null;
+  const end = typeof input.selectionEnd === "number" ? input.selectionEnd : null;
+
+  // Number inputs expose no selection API, so fall back to evaluating the
+  // inserted data alone; either way the save gate still validates the final
+  // value, so nothing unsavable is silently rewritten here.
+  const prospective = start === null || end === null
+    ? event.data
+    : `${value.slice(0, start)}${event.data}${value.slice(end)}`;
+
+  if (!isPlainScoreDraft(prospective)) {
+    event.preventDefault();
+  }
 }
 
 function handleFinishGame() {

@@ -57,6 +57,19 @@
   non-numbers, and out-of-range amounts are rejected without changing totals.
   Totals may be negative, and each applied change appends
   `{ id, playerId, amount }` to the in-memory `game.changes` log.
+- The score field must accept only plain signed-integer text, guarded at both
+  layers: a `beforeinput` guard on `#score-amount` must cancel every insertion
+  whose prospective value is not a plain signed-integer draft (letters such as
+  `e` can never be typed, pasted, dropped, or IME-inserted), must never block
+  deletion/undo/redo types or data-less insertions, must stay silent about
+  blocked characters, and must never rewrite the value — a transient decimal
+  like `2.5` stays typable so the save-side decimals message still applies.
+  `parseScoreAmount` must accept only plain signed integer text: its
+  plain-format gate runs after the finite/integer/zero/range checks so every
+  existing error mapping is preserved (`1e-3` → not-integer, `0.0` → zero,
+  `1e30` → out-of-range), and scientific notation such as `1e3` — superseding
+  the documented add-player-score semantic-parse decision — is unsavable
+  through any path.
 - Leaderboard ranks are competition ranks derived at render time from player
   totals: `rank = 1 +` the number of strictly higher totals, so equal totals
   share a rank and the next position skips (12, 12, 8 → 1, 1, 3). Tied players

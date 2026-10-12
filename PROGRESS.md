@@ -2,21 +2,100 @@
 
 ## Current verified state
 
-- Phase: `play-again` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `restrict-score-entry-input` independently accepted (`accepted`) — all 11 features complete; PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
 - Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, finish/read-only standings, the podium celebration, and replay).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `play-again` PR; then plan `restrict-score-entry-input` from updated `main`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`,
-  `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`,
-  `handle-storage-failure`, `finish-game`, `celebrate-podium`, and
-  `play-again` are `accepted`; `restrict-score-entry-input` is the only
-  remaining slice.
-- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction (one transient Chrome-launch timeout during a CI-mode gate run passed on immediate rerun).
+- Next step: merge the `restrict-score-entry-input` PR — with its merge, the full 11-feature MVP is delivered.
+- Features: all 11 features are `accepted`: `bootstrap-web-shell`,
+  `create-game-roster`, `add-player-score`, `rank-leaderboard`,
+  `undo-latest-score`, `resume-saved-game`, `handle-storage-failure`,
+  `finish-game`, `celebrate-podium`, `play-again`, and
+  `restrict-score-entry-input`.
+- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Score-entry restriction implementation (restrict-score-entry-input)
+
+- Completed the interrupted implementer run (the tree already held partial
+  uncommitted work on the same branch; it was verified against the spec and
+  kept — nothing was reverted or redone). `src/score.js` gained the exported
+  predicates `isPlainIntegerText` (`/^[+-]?\d+$/` on the trimmed text) and
+  `isPlainScoreDraft` (`/^[+-]?\d*\.?\d*$/`, the entry/draft pattern that
+  allows empty, a lone sign, and a transient decimal), plus one final
+  plain-format gate in `parseScoreAmount` ordered after the existing
+  finite/integer/zero/range checks: exact-integer text that is not plain
+  (`1e3`, `0x10`, `10.`) returns the existing `{ error: "not-a-number" }`, so
+  every prior error mapping is preserved bit-for-bit (`1e-3` → not-integer,
+  `0.0` → zero, `1e30` → out-of-range). This supersedes the documented
+  add-player-score `1e3` semantic-parse decision; no value is ever silently
+  rewritten.
+- Extended `src/main.js`: `bindActiveEvents` attaches a `beforeinput`
+  listener (`guardScoreEntryInput`) to `#score-amount`. For insertion input
+  types with string `data` it builds the prospective value (selection
+  replaced by the data, falling back to the data alone when the selection API
+  is unavailable — number inputs expose none) and calls `preventDefault()`
+  when it fails `isPlainScoreDraft`. Deletion/undo/history types and
+  data-less insertions (e.g. some autofill replacements) are never blocked;
+  blocked characters are silent, matching how `type="number"` already
+  ignores `a`/`x`. `.` stays typable so the typed-decimals save path still
+  reaches "Decimals are not allowed." exactly as accepted. No markup, style,
+  copy, or focus change; `type="number"` and all attributes stay (signed
+  mobile keypad preserved; `inputmode`/`pattern`/type change rejected per
+  spec).
+- Tests: `scripts/score-test.mjs` honestly flips the `1e3` assertion to
+  `{ error: "not-a-number" }` with the supersession comment and adds `+10`,
+  `0x10`/`10.`, 14 `isPlainIntegerText`, and 15 `isPlainScoreDraft` cases
+  (the `1e-3`/`0.0`/`1e30` neighbors untouched and green).
+  `scripts/browser-score-test.mjs` replaces the semantic-`1e3` save with
+  `savePoints(cdp, "1000")` (Sam 5 → 1005 keeps the downstream totals
+  `["1005","7"]` and `["7","-5"]` valid), adds real-key `e`/`E`/`x` blocking
+  via a new `pressRealKey` helper (`Input.dispatchKeyEvent`, since `fill()`
+  sets `value` directly and bypasses `beforeinput`) with digits/sign/
+  deletion still entering and typing `1e3` yielding `13`, `Input.insertText`
+  `"1e3"` blocked wholesale, programmatic `fill("1e3")` rejected at save with
+  the not-a-number message and a byte-identical stored payload, a11y
+  attributes (type/step/min/max, label, helper, `aria-describedby`,
+  `aria-live`) asserted unchanged, and the same real-key letter block at
+  320×720; summary line updated. No new files, npm commands, or
+  `init.sh`/`package.json` changes.
+- Updated README (plain-signed-integers-only usage sentence + final-slice
+  next-steps pointer), ARCHITECTURE.md (entry/parse contract on both
+  `src/score.js` and `src/main.js` descriptions plus a dedicated guarded
+  entry/save paragraph), and CONSTRAINTS.md (durable MUST: two-layer
+  plain-integer-only rule with the gate ordered after the existing checks).
+- Verification: `node --check` on the four touched files passed;
+  `npm run test:score` passed; `npm run test:browser:score` passed on real
+  headless Chrome (letter blocking, wholesale insert block, programmatic
+  rejection with unchanged totals/focus/storage, all accepted saves and
+  rejections, 320px, a11y attributes, zero console errors);
+  `npm run test` passed end to end with all nine browser suites chained and
+  the other eight unmodified; `./init.sh` and `CI=true ./init.sh` passed
+  (exit 0) and exited without starting a server; the `npm run dev` probe
+  returned 200 for `/`, `/src/score.js`, and `/src/main.js` and 404 for
+  `/AGENTS.md`. Screenshots at
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-add-player-score/`
+  (desktop + 320px) were generated but not visually openable this session;
+  layout, targets, focus, and overflow were asserted programmatically. No
+  transient Chrome-launch timeout occurred this session.
+- Known limitation: a physical mobile keypad cannot be exercised headless;
+  the signed keypad contract is preserved by construction (`type="number"`
+  kept, no `inputmode`), same disclosure as add-player-score. A physical
+  device pass remains available for any manual verification.
+- Next: run independent `$feature-validator` for `restrict-score-entry-input`; after
+  acceptance, commit `feat: complete restrict-score-entry-input`, push
+  `codex/restrict-score-entry-input`, and open the PR (the untracked spec
+  file `docs/specs/restrict-score-entry-input.md` belongs to this feature's
+  PR).
+- Independent validator verdict: `accept`. Reran the score suites, both gate
+  modes, an in-process raw HTTP boundary probe, and an independent browser
+  probe (typed 2.5 reaches the exact decimals message, insertText
+  rejections, silent comma/space blocking, number-input attributes asserted
+  live); confirmed no value rewriting, parse gate ordering, and that the
+  interrupted-run tree is consistent; no security findings.
 
 ### 2026-10-12 — Replay implementation (play-again)
 
