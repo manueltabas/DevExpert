@@ -24,7 +24,9 @@ game object verbatim (players, totals, and the full change log) plus one
 storage-owned `updatedAt` stamp. `loadSavedGames` and `saveGames` take an
 injectable storage backend, validate the envelope and each entry on read,
 and never throw: they return result codes (`unavailable`/`invalid` for reads,
-`unavailable`/`write` for writes) while diagnostics log only those codes.
+`unavailable`/`write` for writes) while diagnostics log only those codes, and
+`loadSavedGames` additionally reports `droppedCount`, the number of unusable
+entries skipped by the per-entry crash guard (0 for clean and failed reads).
 `upsertSavedGame` replaces a saved game by id or appends it, and
 `orderSavedGamesForDisplay` sorts copies most-recently-updated first with
 deterministic tie-breaks. `src/main.js` persists the active game after every
@@ -33,6 +35,20 @@ successful game mutation (start, save points, undo), renders the home
 restoring it as the active game — so undo works immediately after a reload
 and undone changes never resurrect. Ranks stay render-time only and are never
 persisted.
+
+Storage failures are surfaced, never silent. `src/main.js` tracks the startup
+read result (`storageReadError`, `storageDroppedCount`) and the latest write
+result (`lastSaveError`) and derives one polite `role="status"` notice
+(`.storage-notice`) that renders at the top of the home "Unfinished games"
+panel and above the active-game leaderboard, plus a home-only info note for
+skipped entries. While the startup read is `invalid`, all writes are
+suppressed for the session — `persistActiveGameSnapshot()` upserts nothing
+and calls no `saveGames`, so an unreadable stored payload is preserved
+byte-for-byte; suppression lifts only on reload. On any other failed write
+the in-memory upsert is rolled back so home never renders a game that is not
+actually in storage, and the first successful save clears the notice (and a
+prior `unavailable` read error). In-memory play always continues with
+unchanged success feedback; diagnostics stay code-only.
 
 There is no backend, account service, database, build step, or deployment
 configuration in this repository. Later features should keep product behavior in
@@ -45,7 +61,7 @@ persistence slice is implemented.
   unless `HOST` or `PORT` is set.
 - `npm run test`: runs roster, standings, score, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
-  leaderboard, undo, and save/resume flows.
+  leaderboard, undo, save/resume, and storage-failure flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -53,15 +69,17 @@ persistence slice is implemented.
 
 - `index.html`: semantic shell and app mount point.
 - `src/main.js`: renders home/setup/active views, handles form events, and wires
-  score entry, selection, live totals, feedback, and the undo-last-score control.
+  score entry, selection, live totals, feedback, the undo-last-score control,
+  and the storage-health notices with the write-safety rule.
 - `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
 - `src/score.js`: score-change bounds, signed integer parsing, safe-integer
   guarded application, latest-change undo, and the in-memory change log.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`.
 - `src/storage.js`: pure single-key local-storage persistence: versioned
-  envelope load/save with injectable storage, result-code errors, upsert by
-  id, and most-recently-updated display ordering.
+  envelope load/save with injectable storage, result-code errors, per-entry
+  crash guard with `droppedCount` reporting, upsert by id, and
+  most-recently-updated display ordering.
 - `src/styles.css`: design tokens, layout, responsive rules, focus styles, and
   reduced-motion defaults.
 - `scripts/static-server.mjs`: small Node HTTP static-file server shared by the
@@ -82,7 +100,13 @@ persistence slice is implemented.
 - `scripts/browser-rank-test.mjs`: desktop/mobile leaderboard ranking interaction checks using isolated headless Chrome.
 - `scripts/browser-undo-test.mjs`: desktop/mobile undo interaction checks using isolated headless Chrome.
 - `scripts/browser-resume-test.mjs`: desktop/mobile save, resume, ordering,
-  undo-after-reload, and blocked-storage checks using isolated headless Chrome.
+  undo-after-reload, and blocked-storage checks (including the write notice and
+  zero phantom cards) using isolated headless Chrome.
+- `scripts/browser-storage-failure-test.mjs`: desktop/mobile storage-failure
+  feedback checks — blocked writes, corrupt and incompatible payloads with
+  byte-identical preservation, counted-failure recovery, partial corruption,
+  unavailable reads, and 320px/accessibility notice checks — using isolated
+  headless Chrome.
 
 ## Boundaries
 
@@ -102,6 +126,8 @@ saved games most-recently-updated first with a Resume control that restores
 the game as active. Reloads therefore keep unfinished games and their undo
 history; a successful undo persists the shortened log, so undone changes
 never reappear. Storage read/write failures never throw and log code-only
-diagnostics; user-facing storage-failure UX is a later feature. Finishing,
-read-only final standings, replay, and saved-game deletion remain separate
-features.
+diagnostics; user-facing failure feedback is a polite status notice on home
+and in the active game, failed writes roll back the in-memory upsert so no
+unsaved game is shown as saved, and an unreadable stored payload suppresses
+all writes for the session so it is never overwritten. Finishing, read-only
+final standings, replay, and saved-game deletion remain separate features.

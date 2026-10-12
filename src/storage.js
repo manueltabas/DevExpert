@@ -3,7 +3,7 @@ export const SAVED_GAMES_VERSION = 1;
 
 export function loadSavedGames({ storage = globalThis.localStorage ?? null } = {}) {
   if (!isReadableStorage(storage)) {
-    return { games: [], error: "unavailable" };
+    return { games: [], error: "unavailable", droppedCount: 0 };
   }
 
   let raw = null;
@@ -11,11 +11,11 @@ export function loadSavedGames({ storage = globalThis.localStorage ?? null } = {
   try {
     raw = storage.getItem(STORAGE_KEY);
   } catch {
-    return { games: [], error: "unavailable" };
+    return { games: [], error: "unavailable", droppedCount: 0 };
   }
 
   if (raw === null || raw === undefined) {
-    return { games: [], error: null };
+    return { games: [], error: null, droppedCount: 0 };
   }
 
   let payload = null;
@@ -23,24 +23,26 @@ export function loadSavedGames({ storage = globalThis.localStorage ?? null } = {
   try {
     payload = JSON.parse(raw);
   } catch {
-    return { games: [], error: "invalid" };
+    return { games: [], error: "invalid", droppedCount: 0 };
   }
 
   if (!isValidEnvelope(payload)) {
-    return { games: [], error: "invalid" };
+    return { games: [], error: "invalid", droppedCount: 0 };
   }
 
   const games = [];
+  let droppedCount = 0;
 
   for (const entry of payload.games) {
     if (isUsableGameEntry(entry)) {
       games.push(entry);
     } else {
+      droppedCount += 1;
       console.warn("Saved game entry skipped: invalid-entry");
     }
   }
 
-  return { games, error: null };
+  return { games, error: null, droppedCount };
 }
 
 export function saveGames({ games, storage = globalThis.localStorage ?? null } = {}) {

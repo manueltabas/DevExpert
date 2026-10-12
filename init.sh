@@ -54,6 +54,9 @@ node --check scripts/browser-undo-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-resume-test.mjs'
 node --check scripts/browser-resume-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-storage-failure-test.mjs'
+node --check scripts/browser-storage-failure-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 

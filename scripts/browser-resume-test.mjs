@@ -71,6 +71,11 @@ async function readHomeState(cdp) {
     })(),
     emptyStatePresent: Boolean(document.querySelector(".empty-state")),
     emptyTitle: document.querySelector(".empty-state .empty-title")?.textContent?.trim() ?? null,
+    emptyBody: document.querySelector(".empty-state .empty-title + p")?.textContent?.trim() ?? null,
+    storageNoticePresent: Boolean(document.querySelector("[data-storage-notice]")),
+    storageNoticeRole: document.querySelector("[data-storage-notice]")?.getAttribute("role") ?? null,
+    storageNoticeText: document.querySelector("[data-storage-notice]")?.textContent?.trim() ?? "",
+    droppedNotePresent: Boolean(document.querySelector(".storage-notice-info")),
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
   }));
 }
@@ -87,6 +92,9 @@ async function readActiveState(cdp) {
     pressedStates: [...document.querySelectorAll(".add-points-action")].map((button) => button.getAttribute("aria-pressed")),
     selectedRowName: document.querySelector(".active-player.is-selected .active-player-name")?.textContent?.trim() ?? null,
     feedback: document.querySelector("#score-feedback")?.textContent?.trim() ?? "",
+    storageNoticePresent: Boolean(document.querySelector("[data-storage-notice]")),
+    storageNoticeRole: document.querySelector("[data-storage-notice]")?.getAttribute("role") ?? null,
+    storageNoticeText: document.querySelector("[data-storage-notice]")?.textContent?.trim() ?? "",
     focusOnHeading: Boolean(document.activeElement?.hasAttribute?.("data-active-heading")),
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
   }));
@@ -354,6 +362,8 @@ async function runStorageFailureScenario(url) {
     const blockedHome = await readHomeState(cdp);
     assert.equal(blockedHome.emptyStatePresent, true, "home must render the empty state when storage starts unavailable");
     assert.equal(blockedHome.cards.length, 0);
+    assert.equal(blockedHome.storageNoticePresent, false, "a successful startup read must not show a storage notice before any write fails");
+    assert.equal(blockedHome.droppedNotePresent, false);
 
     const blockedStorage = await readSavedGamesState(cdp, STORAGE_KEY);
     assert.equal(blockedStorage.keyCount, 0, "blocked writes must not create the storage key");
@@ -364,7 +374,17 @@ async function runStorageFailureScenario(url) {
     const blockedActive = await readActiveState(cdp);
     assert.deepEqual(blockedActive.totals, ["10", "0"], "in-memory totals must keep working when saves fail");
     assert.deepEqual(blockedActive.ranks, ["1", "2"]);
-    assert.match(blockedActive.feedback, /Added 10 points to Alex\. New total: 10\./);
+    assert.equal(
+      blockedActive.feedback,
+      "Added 10 points to Alex. New total: 10. Rank: 1.",
+      "the success feedback must be unchanged when only persistence fails"
+    );
+    assert.equal(blockedActive.storageNoticePresent, true, "the active view must warn when the latest change did not save");
+    assert.equal(blockedActive.storageNoticeRole, "status");
+    assert.equal(
+      blockedActive.storageNoticeText,
+      "Your latest change couldn't be saved. The game still works, and nothing already saved was lost — your next change will try again."
+    );
     assert.equal(blockedActive.horizontalOverflow, false);
 
     const afterBlockedSave = await readSavedGamesState(cdp, STORAGE_KEY);
@@ -373,6 +393,15 @@ async function runStorageFailureScenario(url) {
     await goHome(cdp);
     const blockedHomeAgain = await readHomeState(cdp);
     assert.equal(blockedHomeAgain.emptyStatePresent, true, "home keeps working after failed saves");
+    assert.equal(blockedHomeAgain.emptyTitle, "No saved games yet.", "the write failure must not swap the empty-state copy");
+    assert.equal(blockedHomeAgain.cards.length, 0, "a failed save must never render a phantom saved-game card");
+    assert.equal(blockedHomeAgain.storageNoticePresent, true, "home must warn that the latest change did not save");
+    assert.equal(blockedHomeAgain.storageNoticeRole, "status");
+    assert.equal(
+      blockedHomeAgain.storageNoticeText,
+      "Your latest change couldn't be saved. The game still works, and nothing already saved was lost — your next change will try again."
+    );
+    assert.equal(blockedHomeAgain.horizontalOverflow, false);
 
     assert.ok(
       warnings.some((warning) => warning.includes("Game save failed")),
@@ -416,7 +445,7 @@ async function main() {
     const blockedSessionPassed = await runStorageFailureScenario(baseUrl);
     assert.equal(blockedSessionPassed, true);
 
-    console.log("Browser resume test passed: two scored games reload and resume with independent totals, cards show title/players/names/colors/Updated with recency ordering and title-bearing Resume names, undo works after resume and never resurrects after a reload, the empty state and retention line render at desktop and 320px, keyboard Enter resumes, and blocked storage keeps the app working with code-only warnings and no console errors.");
+    console.log("Browser resume test passed: two scored games reload and resume with independent totals, cards show title/players/names/colors/Updated with recency ordering and title-bearing Resume names, undo works after resume and never resurrects after a reload, the empty state and retention line render at desktop and 320px, keyboard Enter resumes, and blocked storage keeps the app working with the role=status write notice on the active view and home, zero phantom saved-game cards after failed saves, unchanged success feedback, code-only warnings, and no console errors.");
     console.log(`Browser evidence screenshots: ${screenshots.desktopHomeScreenshot}, ${screenshots.resumedDesktopScreenshot}, ${screenshots.mobileHomeScreenshot}`);
   } finally {
     if (chrome) {

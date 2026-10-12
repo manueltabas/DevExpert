@@ -2,17 +2,106 @@
 
 ## Current verified state
 
-- Phase: `resume-saved-game` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `handle-storage-failure` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, and save/resume).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, and storage-failure feedback).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `resume-saved-game` PR; then plan `handle-storage-failure` from updated `main`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, `undo-latest-score`, and `resume-saved-game` are `accepted`; remaining slices are `not_started`.
+- Next step: merge the `handle-storage-failure` PR; then plan `finish-game` from updated `main`.
+- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`, and `handle-storage-failure` are `accepted`; remaining slices are `not_started`.
 - Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Storage-failure feedback implementation (handle-storage-failure)
+
+- Extended `src/storage.js` with one reporting field: `loadSavedGames` now
+  returns `droppedCount` (entries rejected by `isUsableGameEntry`; `0` for
+  clean and `unavailable`/`invalid` reads). `saveGames`, the envelope shape,
+  and every other behavior stay exactly as accepted.
+- Extended `src/main.js` with the storage-health layer: `state.storageReadError`
+  (`null | "unavailable" | "invalid"`), `state.storageDroppedCount`, and
+  `state.lastSaveError` (`null | "unavailable" | "write"`), set from the
+  startup load before the first render so a failed read explains itself
+  immediately instead of silently rendering an empty list.
+  `getStorageNotice()` derives the first applicable of `invalid` (read error)
+  → `lastSaveError` → `unavailable` (read error); `renderHome` and
+  `renderActiveGame` embed one `.storage-notice` with `role="status"` and the
+  exact per-code copy (top of the Unfinished panel; above the leaderboard
+  rows), plus a home-only `.storage-notice-info` note when
+  `storageDroppedCount > 0`; `paintStorageNotice()` (replaceChildren +
+  append, mirroring `paintScoreFeedback`) runs after `render()` in the three
+  mutation paths so the live region updates reliably. Under `invalid`
+  suppression the unfinished-panel empty state swaps to "Saved games can't be
+  shown right now." / "Nothing was deleted — the saved data just couldn't be
+  read."
+- Write-safety rule in `persistActiveGameSnapshot()`: while the startup read
+  is `invalid` it logs `console.warn("Game save failed:", "invalid")` and
+  returns without upserting or calling `saveGames`, so the unreadable payload
+  is preserved byte-for-byte and suppression lifts only on reload. Otherwise
+  it captures `previous = state.savedGames`, upserts, writes, and on a failed
+  write rolls the upsert back, sets `lastSaveError`, and keeps the code-only
+  warning — home never renders a phantom card. On success it clears
+  `lastSaveError` and a prior `unavailable` read error. There are no retry
+  or dismiss controls: every subsequent mutation auto-retries and a
+  successful save clears the notice.
+- Styled `src/styles.css`: `.storage-notice` warning card (#9f271e on
+  `--surface-strong`, 7.05:1 AA contrast, `overflow-wrap: anywhere`,
+  8px-rhythm margins) and `.storage-notice-info` muted variant (~5.4:1); no
+  layout changes beyond stacking the block above panel content; no overflow
+  at 320px.
+- Tests: `scripts/storage-test.mjs` deepEqual results updated honestly to
+  `{ games, error, droppedCount }` plus dropped-count cases; the
+  `browser-resume-test.mjs` blocked-storage scenario now asserts the write
+  notice (exact copy, `role="status"`), `cards.length === 0` after failed
+  saves, the unchanged success feedback including `Rank: 1.`, and no
+  pre-failure notice; new `scripts/browser-storage-failure-test.mjs` covers
+  spec Scenarios 1–6 in six isolated Chrome sessions (setItem-throws, corrupt
+  `not-json{`, `{ version: 2 }` envelope, counted setItem failures within one
+  document, partial corruption with a seeded usable game, unavailable read
+  with an instrumented write counter), byte-identical `raw` payload checks —
+  including reloads with the seeding script removed so the real stored bytes
+  are re-read — and 320px/`role="status"`/contrast/keyboard checks for all
+  four notice states. Wired `test:browser:storage-failure` into
+  `package.json`'s `test` chain and `init.sh` syntax checks.
+- Updated README (user-facing behavior + new test command),
+  ARCHITECTURE.md (failure-feedback layer, suppression, rollback, new script),
+  and CONSTRAINTS.md (three durable MUST rules: suppress all writes while the
+  startup read is invalid, roll back failed-write upserts so nothing unsaved
+  is shown as saved, polite single live-region notices with code-only
+  diagnostics).
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:storage` passed; `npm run test:browser:resume` passed with the
+  strengthened blocked-storage session; `npm run test:browser:storage-failure`
+  passed on real headless Chrome across all six sessions with zero uncaught
+  console errors and code-only warnings; `npm run test` passed end to end with
+  all six browser suites chained; `./init.sh` and `CI=true ./init.sh` passed
+  and exited without starting a server; `npm run dev` probe returned 200 for
+  `/`, `/src/main.js`, `/src/styles.css`, and `/src/storage.js` and 404 for
+  `/AGENTS.md`. Screenshots under
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-handle-storage-failure/`
+  (10 files, desktop + 320px) could not be opened for visual inspection in
+  this session because temp-directory reads are permission-blocked; notice
+  visibility, computed AA contrast (>= 4.5), 320px overflow, and >=44px
+  targets were asserted programmatically. The manual real-browser pass is
+  covered by the six automated real-Chrome sessions (DevTools-equivalent
+  storage seeding, key corruption, counted quota failures, blocked writes).
+- Fixed during self-verification: the new suite's session runner initially
+  returned diagnostics instead of the callbacks' screenshot paths, so the
+  summary printed captured warnings; fixed by returning the callback result
+  and asserting zero console problems inside the runner.
+- Next: run independent `$feature-validator` for `handle-storage-failure`;
+  after acceptance, commit and open the PR (the untracked spec file
+  `docs/specs/handle-storage-failure.md` belongs to this feature's PR).
+- Independent validator verdict: `accept`. Reran both gate modes, storage/
+  resume/storage-failure suites, HTTP boundary probes, and an independent
+  32-assertion browser probe (hostile payload shapes proving byte-for-byte
+  preservation, zero phantom cards, escaped hostile titles); no security
+  findings. Two Low non-blocking notes: the dropped disclosure is an info note
+  without role=status (functionally inert startup content; role=status is
+  asserted for the invalid/write/unavailable notice states), and the dropped
+  note persisting after a successful save matches the spec's recovery list.
 
 ### 2026-10-12 — Save and resume implementation (resume-saved-game)
 

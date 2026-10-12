@@ -31,12 +31,13 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, and save/resume flows.
+- `npm run test`: run roster, standings, score, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, and storage-failure flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
 - `npm run test:browser:undo`: run only the Chrome undo interaction checks.
 - `npm run test:browser:resume`: run only the Chrome save/resume interaction checks.
+- `npm run test:browser:storage-failure`: run only the Chrome storage-failure feedback checks.
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:storage`: run only the storage unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
@@ -67,7 +68,19 @@ log intact, so undo works immediately after resuming and undone changes never
 reappear after a reload. Games are saved only in this browser — clearing site
 data removes them. Ranks stay render-time only and are never stored.
 
+Storage problems are never silent. When a save fails (blocked or full
+storage), when the stored data is unreadable or incompatible, or when
+individual saved entries are unusable, a polite status notice explains it in
+plain language at the top of the **Unfinished games** panel and above the
+leaderboard in the active game, while play keeps working in memory with
+unchanged success feedback. Nothing is falsely presented as saved: a failed
+save never leaves a card on the home screen, and when the stored payload
+cannot be read at startup, no new changes are written for that session so the
+original data is preserved untouched — reloading the page tries again. Skipped
+entries are disclosed with an info note, and every successful save clears the
+notice automatically; there are no retry or dismiss buttons.
+
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `resume-saved-game` is
-accepted and merged, the next feature is `handle-storage-failure`.
+Run `$feature-flow` one feature at a time. After `handle-storage-failure` is
+accepted and merged, the next feature is `finish-game`.
