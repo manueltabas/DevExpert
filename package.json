@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:game && npm run test:storage && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo && npm run test:browser:resume && npm run test:browser:storage-failure && npm run test:browser:finish-game && npm run test:browser:podium",
+    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:game && npm run test:storage && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo && npm run test:browser:resume && npm run test:browser:storage-failure && npm run test:browser:finish-game && npm run test:browser:podium && npm run test:browser:play-again",
     "test:browser": "node scripts/browser-roster-test.mjs",
     "test:browser:finish-game": "node scripts/browser-finish-game-test.mjs",
+    "test:browser:play-again": "node scripts/browser-play-again-test.mjs",
     "test:browser:podium": "node scripts/browser-podium-test.mjs",
     "test:browser:rank": "node scripts/browser-rank-test.mjs",
     "test:browser:resume": "node scripts/browser-resume-test.mjs",
