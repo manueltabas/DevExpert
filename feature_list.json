@@ -76,13 +76,21 @@
     "depends_on": [
       "add-player-score"
     ],
-    "status": "not_started",
+    "status": "accepted",
     "verification": [
       "Verify totals 12, 12, 8 produce ranks 1, 1, 3; verify negative totals and all-player ties.",
       "Change a score and check immediate reorder, stable tied display, and retained keyboard focus.",
       "Run CI=true ./init.sh with the real checks established during bootstrap; record exact commands and results."
     ],
-    "evidence": [],
+    "evidence": [
+      "2026-10-12: node --check passed for src/standings.js, src/main.js, scripts/standings-test.mjs, scripts/browser-rank-test.mjs, and the pre-existing sources and test scripts.",
+      "2026-10-12: npm run test:standings passed: rankPlayers(null/empty) -> [], 12/12/8 -> ranks 1,1,3 with no rank 2, 5/-3/-3 -> 1,2,2, all-zero createGame tie -> ranks 1,1,1 in creation order, mid-table tie 10/5/5/0 -> 1,2,2,4, player.order overrides array position, array-index fallback when order is absent, 20-player mixed game sorted descending with rank = 1 + strictly-higher count asserted for every row, re-rank after applyScoreChange lets the trailing player overtake, no rank fields or change-log writes, and structuredClone snapshots prove the input game is never mutated.",
+      "2026-10-12: npm run test passed: roster unit, standings unit, score unit, HTTP smoke (src/standings.js served 200; AGENTS.md, feature_list.json, and .git/config blocked; malformed path 400), roster browser test, updated score browser test (ranked DOM-order totals [\"1005\",\"7\"]), and the new rank browser test.",
+      "2026-10-12: scripts/browser-rank-test.mjs passed on real headless Chrome: 12/12/8 displayed as ranks 1,1,3 with tied rows in creation order and no rank 2; total aria-labels read 'Name: rank N, total T'; panel copy 'Leaderboard' / 'Highest total leads; ties share rank.'; a save for another player re-rendered while the tied pair kept creation order (Jamie first, then Alex, Sam at 1,2,2); an overtaking save reordered rows immediately (Sam 10 before Alex 7) with aria-pressed following Sam, feedback 'Added 5 points to Sam. New total: 10. Rank: 1.', and focus back in #score-amount with a cleared input; negative totals 5/-3/-3 -> ranks 1,2,2; a rejected entry repainted feedback without re-rendering the roster (DOM sentinel survived); a fresh all-zero game showed every row at rank 1; at 320px a 20-player scored game rendered 20 rank numerals with ties at rank 1 (21/21) and rank 5 (fifteen zeros), no horizontal overflow, >=44px targets, visible input focus, keyboard Enter on a row button selecting Player 20, and a +30 save re-ranking Player 20 to first while focus stayed in the input; localStorage.length 0 and no console errors throughout. Screenshots: /var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-rank-leaderboard/desktop-rank-ties.png, desktop-rank-reorder.png, and mobile-20-player-leaderboard.png.",
+      "2026-10-12: ./init.sh and CI=true ./init.sh passed; both ran the syntax checks (including src/standings.js, scripts/standings-test.mjs, scripts/browser-rank-test.mjs) and the full npm run test chain and exited without starting a long-running server.",
+      "2026-10-12: npm run dev probe returned 200 for / and /src/standings.js and 404 for /AGENTS.md; scripts/static-server.mjs allowlist and scripts/smoke.mjs asset check both cover src/standings.js. Screenshot files were generated in the OS temp directory but could not be opened for visual inspection in this sandbox session; readability was verified programmatically (visible rank nodes, non-zero font size, no overflow, >=44px targets).",
+      "2026-10-12: Independent validator verdict: accept. Reran CI=true ./init.sh, ./init.sh, focused standings and browser-rank checks, live HTTP boundary probes, and extra edge-case probes (triple tie 9/9/9/2 -> 1,1,1,4; order fallbacks; immutability); spec code review confirmed render-time-only ranks and no stored rank fields; no security findings."
+    ],
     "notes": "Use rank = 1 + count of strictly higher totals. Keep names/icons readable with 20 players."
   },
   {

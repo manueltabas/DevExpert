@@ -12,6 +12,7 @@ import {
   validateRoster
 } from "./roster.js";
 import { MAX_SCORE_ABS, applyScoreChange, parseScoreAmount } from "./score.js";
+import { rankPlayers } from "./standings.js";
 
 const appRoot = document.querySelector("[data-app-root]");
 const yearTarget = document.querySelector("[data-current-year]");
@@ -327,13 +328,13 @@ function renderActiveGame() {
           <div class="panel-heading">
             <span class="dice-card" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
             <div>
-              <p class="eyebrow">Totals</p>
-              <h3>Totals update with every save</h3>
+              <p class="eyebrow">Leaderboard</p>
+              <h3>Highest total leads; ties share rank.</h3>
             </div>
           </div>
 
           <ol class="active-roster" aria-label="Active game players">
-            ${game.players.map((player) => renderActivePlayer(player, player.id === state.selectedPlayerId)).join("")}
+            ${rankPlayers(game).map((row) => renderActivePlayer(row.player, row.rank, row.player.id === state.selectedPlayerId)).join("")}
           </ol>
         </div>
       </div>
@@ -353,14 +354,15 @@ function renderActiveGame() {
   bindActiveEvents();
 }
 
-function renderActivePlayer(player, isSelected) {
+function renderActivePlayer(player, rank, isSelected) {
   const color = getColor(player.color);
 
   return `
     <li class="active-player${isSelected ? " is-selected" : ""}" data-player-id="${escapeAttribute(player.id)}">
+      <span class="active-player-rank">${rank}</span>
       <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
       <span class="active-player-name">${escapeHtml(player.name)}</span>
-      <span class="active-player-total" aria-label="${escapeAttribute(player.name)} total">${String(player.total)}</span>
+      <span class="active-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
       <button type="button" class="add-points-action" data-action="select-player" aria-pressed="${isSelected ? "true" : "false"}" aria-label="Add points for ${escapeAttribute(player.name)}">Add points</button>
     </li>
   `;
@@ -453,11 +455,13 @@ function handleScoreSubmit() {
     return;
   }
 
-  const updatedTotal = result.game.players.find((player) => player.id === state.selectedPlayerId)?.total;
+  const updatedPlayer = result.game.players.find((player) => player.id === state.selectedPlayerId);
+  const updatedTotal = updatedPlayer?.total;
+  const updatedRank = rankPlayers(result.game).find((row) => row.player.id === state.selectedPlayerId)?.rank ?? null;
   state.activeGame = result.game;
   state.scoreFeedback = {
     kind: "success",
-    message: `Added ${parsed.amount} points to ${targetPlayer.name}. New total: ${updatedTotal}.`
+    message: `Added ${parsed.amount} points to ${targetPlayer.name}. New total: ${updatedTotal}. Rank: ${updatedRank}.`
   };
   render();
   appRoot.querySelector("#score-amount")?.focus();
