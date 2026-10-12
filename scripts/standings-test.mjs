@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
 import { applyScoreChange } from "../src/score.js";
-import { rankPlayers } from "../src/standings.js";
+import { podiumRows, rankPlayers } from "../src/standings.js";
 
 // rankPlayers: null game and missing/empty player lists
 assert.deepEqual(rankPlayers(null), []);
@@ -159,4 +159,66 @@ assert.deepEqual(orderGame, beforeRanking, "rankPlayers must never mutate the in
 assert.deepEqual(rankPlayers({ players: [{ id: "solo", name: "Solo", order: 0, total: -7 }] }),
   [{ player: { id: "solo", name: "Solo", order: 0, total: -7 }, rank: 1 }]);
 
-console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, and read-only input handling.");
+// podiumRows: eligibility is every rank <= 3 row, with ties never collapsed (12/12/8 -> 1,1,3)
+const podiumTieGame = {
+  players: [
+    { id: "pod-1", name: "Alex", order: 0, total: 12 },
+    { id: "pod-2", name: "Sam", order: 1, total: 12 },
+    { id: "pod-3", name: "Jamie", order: 2, total: 8 }
+  ]
+};
+const podiumTie = podiumRows(podiumTieGame);
+assert.deepEqual(
+  podiumTie.map((row) => [row.player.id, row.rank]),
+  [["pod-1", 1], ["pod-2", 1], ["pod-3", 3]],
+  "12/12/8 must put three players on the podium as ranks 1,1,3"
+);
+assert.ok(!podiumTie.some((row) => row.rank === 2), "an empty rank-2 group must not be fabricated");
+assert.ok(podiumTie.every((row) => row.player === podiumTieGame.players.find((player) => player.id === row.player.id)),
+  "podium rows reference the original player objects");
+
+// podiumRows: both rank-2 players qualify and the rank-4 pair is excluded (10/5/5/0/0 -> 1,2,2,4,4)
+const podiumCutoffGame = {
+  players: [
+    { id: "cut-1", name: "Ada", order: 0, total: 10 },
+    { id: "cut-2", name: "Ben", order: 1, total: 5 },
+    { id: "cut-3", name: "Cal", order: 2, total: 5 },
+    { id: "cut-4", name: "Dee", order: 3, total: 0 },
+    { id: "cut-5", name: "Eli", order: 4, total: 0 }
+  ]
+};
+assert.deepEqual(
+  podiumRows(podiumCutoffGame).map((row) => [row.player.id, row.rank]),
+  [["cut-1", 1], ["cut-2", 2], ["cut-3", 2]],
+  "10/5/5/0/0 must include both rank-2 players and exclude the rank-4 pair"
+);
+
+// podiumRows: twenty tied players all share rank 1 and all stay eligible
+const twentyTiedGame = {
+  players: Array.from({ length: 20 }, (_, index) => ({
+    id: `tied-${index + 1}`,
+    name: `Player ${index + 1}`,
+    order: index,
+    total: 0
+  }))
+};
+const twentyPodium = podiumRows(twentyTiedGame);
+assert.equal(twentyPodium.length, 20, "all 20 tied players must be podium-eligible");
+assert.ok(twentyPodium.every((row) => row.rank === 1), "twenty tied players share rank 1");
+
+// podiumRows: guard cases return an empty list
+assert.deepEqual(podiumRows(null), []);
+assert.deepEqual(podiumRows(undefined), []);
+assert.deepEqual(podiumRows({}), []);
+assert.deepEqual(podiumRows({ players: [] }), []);
+
+// podiumRows: read-only derivation returning a fresh array
+const beforePodiumRows = structuredClone(podiumCutoffGame);
+podiumRows(podiumCutoffGame);
+assert.deepEqual(podiumCutoffGame, beforePodiumRows, "podiumRows must never mutate the input game");
+assert.notEqual(podiumRows(podiumCutoffGame), podiumRows(podiumCutoffGame),
+  "podiumRows must return a fresh array on every call");
+assert.ok(!("rank" in podiumCutoffGame) && podiumCutoffGame.players.every((player) => !("rank" in player)),
+  "podiumRows must not store rank fields");
+
+console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, podiumRows eligibility (ties never collapsed, rank-4 excluded), and read-only input handling.");

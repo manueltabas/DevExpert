@@ -11,11 +11,13 @@ scoring helpers: signed integer parsing, `applyScoreChange`, which updates
 one player's total and appends `{ id, playerId, amount }` to the in-memory
 `game.changes` log, and `undoLastScoreChange`, which pops the newest log
 entry, restores that player's total, and returns a new game object without
-mutating the input. `src/standings.js` contains the pure ranking helper
+mutating the input. `src/standings.js` contains the pure ranking helpers
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
-creation-order ties. `src/main.js` calls it at render time only; no rank is
-stored on players, games, or the change log.
+creation-order ties, and `podiumRows(game)`, which filters that ranking to
+every row with rank ≤ 3 without collapsing ties or mutating its input.
+`src/main.js` calls both at render time only; no rank is stored on players,
+games, or the change log.
 
 `src/storage.js` contains the pure persistence helpers behind the single
 versioned storage key `scorekeeper:games`, which holds a
@@ -52,6 +54,29 @@ screen additionally renders the "Finished games" list from saved games
 filtered to `status: "finished"` with View results controls that reopen the
 read-only view through the same resume path.
 
+The podium celebration is the app's display-only modal layer. A successful
+confirm-finish sets a transient `state.podiumOpen` flag (reset wherever the
+finish prompt resets, so reopening, View results, or reloading never
+re-celebrates), and `renderFinishedGame` then renders the app's only `<dialog>`
+— a `.podium-dialog` opened with `showModal()` (guarded) that derives its
+content at render time from `podiumRows(state.activeGame)`: ascending "Rank 1"
+to "Rank 3" groups with every tied player included and empty rank groups
+omitted, tokens/rows/aria-labels reusing the accepted conventions, and a
+decorative `aria-hidden` confetti layer of 14 deterministic pieces animated
+by one CSS `@keyframes` rule (single iteration, ends invisible) that a
+`prefers-reduced-motion: reduce` rule suppresses with `display: none`. The
+dialog is labelled (`aria-labelledby`) and described (`aria-describedby`),
+opens with focus on its Close button, and dismisses through the Close button,
+Escape (native `cancel`, prevented and routed through the shared path), or a
+backdrop click (`event.target === dialog`) — all funneling into one
+idempotent cleanup that clears the flag, re-renders the finished view without
+the dialog, and returns focus to the game heading. Because Chrome dispatches
+the dialog `close` event as a queued task that can be delayed (and starved on
+hidden pages), dismissal cleanup does not depend on that event alone; the
+`close` listener remains as the idempotent fallback. The celebration writes
+nothing: opening and dismissing trigger no save, and the stored payload stays
+byte-identical.
+
 Storage failures are surfaced, never silent. `src/main.js` tracks the startup
 read result (`storageReadError`, `storageDroppedCount`) and the latest write
 result (`lastSaveError`) and derives one polite `role="status"` notice
@@ -77,7 +102,7 @@ persistence slice is implemented.
   unless `HOST` or `PORT` is set.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
-  leaderboard, undo, save/resume, storage-failure, and finish-game flows.
+  leaderboard, undo, save/resume, storage-failure, finish-game, and podium flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -85,15 +110,18 @@ persistence slice is implemented.
 
 - `index.html`: semantic shell and app mount point.
 - `src/main.js`: renders home/setup/active views (with the read-only finished
-  variant), handles form events, and wires score entry, selection, live totals,
-  feedback, the undo-last-score control, the finish-game confirmation, the
-  home Finished games list, and the storage-health notices with the
-  write-safety rule.
+  variant and the podium celebration modal), handles form events, and wires
+  score entry, selection, live totals, feedback, the undo-last-score control,
+  the finish-game confirmation, the home Finished games list, the storage-
+  health notices with the write-safety rule, and the dismissible podium
+  dialog with confetti.
 - `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
 - `src/score.js`: score-change bounds, signed integer parsing, safe-integer
   guarded application, latest-change undo, and the in-memory change log.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
-  competition ranks, and deterministic creation-order ties via `player.order`.
+  competition ranks, and deterministic creation-order ties via `player.order`,
+  plus the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
+  never collapsed).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
   `active` to `finished` with `missing-game`/`already-finished` guards and no
   mutation or extra fields.
@@ -131,9 +159,18 @@ persistence slice is implemented.
   headless Chrome.
 - `scripts/browser-finish-game-test.mjs`: desktop/mobile finishing checks —
   the cancel/confirm prompt with focus moves, the locked read-only standings,
-  persistence and reload/reopen with identical final ranks and totals, the
-  home Finished games panel, finishing under blocked writes and invalid-read
-  suppression, and 320px/keyboard checks — using isolated headless Chrome.
+  the podium opening on confirm and dismissing back to the heading, no
+  re-celebration on reopen, persistence and reload/reopen with identical final
+  ranks and totals, the home Finished games panel, finishing under blocked
+  writes and invalid-read suppression, and 320px/keyboard checks — using
+  isolated headless Chrome.
+- `scripts/browser-podium-test.mjs`: desktop/mobile podium celebration checks —
+  tie eligibility (1,1,3 and 20 tied players in one scrolling group), rank-4
+  exclusion, the Close/Escape/backdrop/Space/Enter dismissal paths with focus
+  return and no re-celebration on reopen, byte-identical payloads across
+  open/dismiss including under blocked writes and invalid-read suppression,
+  reduced-motion confetti suppression via emulated media, and 320px overflow,
+  target, and keyboard checks — using isolated headless Chrome.
 
 ## Boundaries
 
@@ -168,4 +205,8 @@ variant of the active view — full final standings with render-time ranks, a
 one from home restores exactly those guarantees. Storage-suppression
 interplay is unchanged: finishing still proceeds in memory when writes are
 suppressed or fail, and no phantom finished card can appear on home. The
-podium celebration, replay, and saved-game deletion remain separate features.
+podium celebration sits on top of that finished view as a display-only modal:
+it opens only on a successful confirm-finish (including under storage
+failures), shows every rank ≤ 3 player with ties never collapsed, dismisses
+back to the heading without changing anything, and never reopens on a mere
+revisit. Replay and saved-game deletion remain separate features.

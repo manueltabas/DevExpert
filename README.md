@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, and finish-game flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, and podium flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -39,6 +39,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:resume`: run only the Chrome save/resume interaction checks.
 - `npm run test:browser:storage-failure`: run only the Chrome storage-failure feedback checks.
 - `npm run test:browser:finish-game`: run only the Chrome finish/read-only standings checks.
+- `npm run test:browser:podium`: run only the Chrome podium celebration checks.
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -84,6 +85,19 @@ home screen's **Finished games** panel, whose **View results** controls
 reopen the same read-only standings — unchanged after any reload — while
 unfinished games keep their Resume controls.
 
+Confirming the finish also celebrates once: a dismissible **Final podium**
+modal opens over the read-only standings, listing "Rank 1" / "Rank 2" /
+"Rank 3" groups for every player whose final competition rank is 1–3 — ties
+are never collapsed (12, 12, 8 puts two players on the top step with no
+"Rank 2" group, and twenty tied players all appear in one scrolling group),
+while players outside the top three stay visible in the full standings
+behind the modal. A brief CSS confetti animation plays and is fully
+suppressed when the system prefers reduced motion. Dismiss with the **Close**
+button, **Escape**, or a click on the backdrop; focus returns to the game
+heading, the standings remain unchanged, and the celebration never repeats
+when the finished game is reopened or reloaded. The celebration is display
+only — it writes nothing and the saved game gains no new fields.
+
 Storage problems are never silent. When a save fails (blocked or full
 storage), when the stored data is unreadable or incompatible, or when
 individual saved entries are unusable, a polite status notice explains it in
@@ -98,5 +112,5 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `finish-game` is accepted
-and merged, the next feature is `celebrate-podium`.
+Run `$feature-flow` one feature at a time. After `celebrate-podium` is accepted
+and merged, the next feature is `play-again`.

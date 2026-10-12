@@ -115,10 +115,31 @@ async function readActiveState(cdp) {
     storageNoticeRole: document.querySelector("[data-storage-notice]")?.getAttribute("role") ?? null,
     storageNoticeText: document.querySelector("[data-storage-notice]")?.textContent?.trim() ?? "",
     backHomePresent: Boolean(document.querySelector("[data-action='back-home']")),
+    podiumDialogPresent: Boolean(document.querySelector("[data-podium-dialog]")),
+    podiumOpen: Boolean(document.querySelector("[data-podium-dialog]")?.open),
     focusOnHeading: Boolean(document.activeElement?.hasAttribute?.("data-active-heading")),
     focusAction: document.activeElement?.dataset?.action ?? null,
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
   }));
+}
+
+async function readPodiumBrief(cdp) {
+  return evaluate(cdp, () => {
+    const dialog = document.querySelector("[data-podium-dialog]");
+    const close = document.querySelector("[data-action='close-podium']");
+
+    return {
+      present: Boolean(dialog),
+      open: Boolean(dialog?.open),
+      labelledBy: dialog?.getAttribute("aria-labelledby") ?? null,
+      describedBy: dialog?.getAttribute("aria-describedby") ?? null,
+      titleText: document.getElementById("podium-title")?.textContent?.trim() ?? null,
+      groupHeadings: [...document.querySelectorAll(".podium-rank-heading")].map((node) => node.textContent.trim()),
+      podiumPlayerCount: document.querySelectorAll(".podium-player").length,
+      focusOnClose: document.activeElement !== null && document.activeElement === close,
+      focusInsideDialog: dialog !== null && document.activeElement !== null && dialog.contains(document.activeElement)
+    };
+  });
 }
 
 async function readFinishPrompt(cdp) {
@@ -169,6 +190,41 @@ async function pressTab(cdp) {
     windowsVirtualKeyCode: 9,
     nativeVirtualKeyCode: 9
   });
+}
+
+async function pressEscape(cdp) {
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyDown",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 27
+  });
+  await cdp.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key: "Escape",
+    code: "Escape",
+    windowsVirtualKeyCode: 27,
+    nativeVirtualKeyCode: 27
+  });
+}
+
+async function waitForAbsent(cdp, selector) {
+  const deadline = Date.now() + 5000;
+
+  while (Date.now() < deadline) {
+    const present = await evaluate(cdp, (targetSelector) =>
+      Boolean(document.querySelector(targetSelector)), selector);
+    if (!present) {
+      return;
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+  }
+
+  throw new Error(`Timed out waiting for removal: ${selector}`);
 }
 
 async function runSession(sessionName, run, { setupSource = "" } = {}) {
@@ -306,7 +362,28 @@ async function runMainFlow(cdp, { consoleProblems }) {
   assert.equal(finished.finishSectionPresent, false, "no finish controls remain in the locked view");
   assert.equal(finished.selectedRowCount, 0, "no row may be selected in the finished view");
   assert.equal(finished.backHomePresent, true, "the All games control must remain");
-  assert.equal(finished.focusOnHeading, true, "finishing must move focus to the game heading");
+  const podium = await readPodiumBrief(cdp);
+  assert.equal(podium.present, true, "confirming must open the podium dialog");
+  assert.equal(podium.open, true, "the podium dialog must be modal-open");
+  assert.equal(podium.labelledBy, "podium-title", "the podium must be labelled by its title");
+  assert.equal(podium.describedBy, "podium-lede", "the podium must be described by its lede");
+  assert.equal(podium.titleText, "Final podium");
+  assert.deepEqual(podium.groupHeadings, ["Rank 1", "Rank 2", "Rank 3"],
+    "three distinct ranks put one player per podium group");
+  assert.equal(podium.podiumPlayerCount, 3);
+  assert.equal(podium.focusOnClose, true, "opening the podium must move focus to its Close button");
+  assert.equal(finished.focusOnHeading, false, "the heading stays inert while the modal dialog is open");
+  const podiumScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-open.png"));
+  await click(cdp, "[data-action='close-podium']");
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+
+  const afterPodiumDismiss = await readActiveState(cdp);
+  assert.equal(afterPodiumDismiss.podiumDialogPresent, false, "dismissing must remove the podium dialog");
+  assert.equal(afterPodiumDismiss.focusOnHeading, true, "dismissing must move focus to the game heading");
+  assert.deepEqual(afterPodiumDismiss.names, ["Alex", "Sam", "Jamie"],
+    "final standings must be unchanged after dismissing the podium");
+  assert.deepEqual(afterPodiumDismiss.totals, ["10", "5", "0"]);
+  assert.deepEqual(afterPodiumDismiss.ranks, ["1", "2", "3"]);
   const finishedViewScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-finished-standings.png"));
 
   const storedFinished = await readSavedGamesState(cdp, STORAGE_KEY);
@@ -367,6 +444,8 @@ async function runMainFlow(cdp, { consoleProblems }) {
   assert.equal(reopened.addPointsCount, 0);
   assert.equal(reopened.scoreFormPresent, false);
   assert.equal(reopened.focusOnHeading, true);
+  assert.equal(reopened.podiumDialogPresent, false,
+    "View results must reopen the standings without re-opening the podium");
 
   // Reload again and reopen: final ranks and totals are identical.
   await navigate(cdp, baseUrl);
@@ -379,6 +458,8 @@ async function runMainFlow(cdp, { consoleProblems }) {
   const reopenedAgain = await readActiveState(cdp);
   assert.deepEqual(reopenedAgain.totals, reopened.totals, "final totals must be identical after another reload");
   assert.deepEqual(reopenedAgain.ranks, reopened.ranks, "render-time ranks must be identical after another reload");
+  assert.equal(reopenedAgain.podiumDialogPresent, false,
+    "a reload plus reopen must not re-celebrate either");
   const storedAgain = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
   const storedCup = storedAgain.games.find((game) => game.id === cupId);
   assert.equal(storedCup.status, "finished");
@@ -448,16 +529,34 @@ async function runMainFlow(cdp, { consoleProblems }) {
   await pressEnter(cdp);
   await waitForSelector(cdp, "[data-finished-note]");
 
+  const mobilePodium = await readPodiumBrief(cdp);
+  assert.equal(mobilePodium.present, true, "the real-key confirm must open the podium at 320px");
+  assert.equal(mobilePodium.open, true);
+  assert.equal(mobilePodium.focusOnClose, true, "the podium must focus its Close button at 320px");
+  assert.equal(mobilePodium.focusInsideDialog, true, "focus must be inside the dialog at 320px");
+  const mobilePodiumScreenshot = await screenshot(cdp, path.join(evidenceDir, "mobile-podium-320px.png"));
+  await pressEscape(cdp);
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+
   const mobileFinished = await readActiveState(cdp);
   assert.equal(mobileFinished.finishedNoteRole, "status");
   assert.equal(mobileFinished.finishedNote, FINISHED_NOTE);
+  assert.equal(mobileFinished.podiumDialogPresent, false, "Escape must dismiss the podium at 320px");
   assert.equal(mobileFinished.horizontalOverflow, false, "the finished view must not overflow at 320px");
   assert.equal(mobileFinished.addPointsCount, 0);
-  assert.equal(mobileFinished.focusOnHeading, true);
+  assert.equal(mobileFinished.focusOnHeading, true, "dismissing via Escape must return focus to the heading");
   const mobileFinishedScreenshot = await screenshot(cdp, path.join(evidenceDir, "mobile-finished-320px.png"));
 
   assert.deepEqual(consoleProblems, [], "the main flow must not produce uncaught console errors");
-  return { promptScreenshot, finishedViewScreenshot, homeScreenshot, mobilePromptScreenshot, mobileFinishedScreenshot };
+  return {
+    promptScreenshot,
+    podiumScreenshot,
+    finishedViewScreenshot,
+    homeScreenshot,
+    mobilePromptScreenshot,
+    mobilePodiumScreenshot,
+    mobileFinishedScreenshot
+  };
 }
 
 async function runBlockedWriteSession(cdp, { consoleProblems, warnings }) {
@@ -478,6 +577,10 @@ async function runBlockedWriteSession(cdp, { consoleProblems, warnings }) {
   await click(cdp, "[data-action='confirm-finish']");
   await waitForSelector(cdp, "[data-finished-note]");
 
+  const blockedPodium = await readPodiumBrief(cdp);
+  assert.equal(blockedPodium.open, true, "the podium must open even when the finish save failed");
+  assert.equal(blockedPodium.focusOnClose, true, "the blocked-save podium must focus its Close button");
+
   const finished = await readActiveState(cdp);
   assert.equal(finished.eyebrow, "Finished", "finishing must proceed in memory under broken storage");
   assert.equal(finished.finishedNote, FINISHED_NOTE);
@@ -492,6 +595,13 @@ async function runBlockedWriteSession(cdp, { consoleProblems, warnings }) {
 
   const storage = await readSavedGamesState(cdp, STORAGE_KEY);
   assert.equal(storage.keyCount, 0, "a blocked save must not create the storage key");
+
+  await click(cdp, "[data-action='close-podium']");
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+  const afterBlockedDismiss = await readActiveState(cdp);
+  assert.equal(afterBlockedDismiss.podiumDialogPresent, false, "the blocked-save podium must dismiss cleanly");
+  assert.equal(afterBlockedDismiss.focusOnHeading, true, "dismissal must return focus to the heading");
+  assert.equal(afterBlockedDismiss.storageNoticePresent, true, "the write notice stays after dismissal");
 
   await goHome(cdp);
   const home = await readHomeState(cdp);
@@ -532,6 +642,10 @@ async function runSuppressedSession(cdp, { consoleProblems, warnings }) {
   await click(cdp, "[data-action='confirm-finish']");
   await waitForSelector(cdp, "[data-finished-note]");
 
+  const suppressedPodium = await readPodiumBrief(cdp);
+  assert.equal(suppressedPodium.open, true, "the podium must open under invalid-read suppression");
+  assert.equal(suppressedPodium.focusOnClose, true);
+
   const finished = await readActiveState(cdp);
   assert.equal(finished.eyebrow, "Finished", "finishing proceeds in memory under suppression");
   assert.equal(finished.finishedNote, FINISHED_NOTE);
@@ -541,6 +655,14 @@ async function runSuppressedSession(cdp, { consoleProblems, warnings }) {
 
   const rawAfter = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
   assert.equal(rawAfter, rawBefore, "the stored payload must stay byte-identical after finishing under suppression");
+
+  await click(cdp, "[data-action='close-podium']");
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+  const afterSuppressedDismiss = await readActiveState(cdp);
+  assert.equal(afterSuppressedDismiss.podiumDialogPresent, false, "the suppressed podium must dismiss cleanly");
+  assert.equal(afterSuppressedDismiss.focusOnHeading, true, "dismissal must return focus to the heading");
+  assert.equal(afterSuppressedDismiss.storageNoticePresent, true, "the invalid notice stays after dismissal");
+  assert.equal(afterSuppressedDismiss.storageNoticeText, INVALID_NOTICE);
 
   await goHome(cdp);
   const home = await readHomeState(cdp);
@@ -567,12 +689,14 @@ async function main() {
       setupSource: `localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, "not-json{");`
     });
 
-    console.log("Browser finish-game test passed: cancel keeps scoring and undo fully working with unchanged payload, confirming locks read-only final standings (Finished eyebrow, role=status note, zero Add points/aria-pressed/score panel/undo, focus on the heading), the stored game carries status finished with no new fields, the game moves to the Finished games panel with View results reopening read-only and identical ranks/totals after reloads while other games stay untouched, finishing under blocked writes and invalid-read suppression stays in-memory and honest with byte-identical payloads and code-only warnings, and 320px/keyboard/focus checks pass with no horizontal overflow and no uncaught console errors.");
+    console.log("Browser finish-game test passed: cancel keeps scoring and undo fully working with unchanged payload, confirming locks read-only final standings (Finished eyebrow, role=status note, zero Add points/aria-pressed/score panel/undo), opens the dismissible podium dialog focused on its Close button, and after dismissal returns focus to the heading with unchanged standings, the stored game carries status finished with no new fields, the game moves to the Finished games panel with View results reopening read-only (never re-celebrating) and identical ranks/totals after reloads while other games stay untouched, finishing under blocked writes and invalid-read suppression stays in-memory and honest with byte-identical payloads and code-only warnings (podium included and dismissed before navigation), and 320px/keyboard/focus checks pass with the podium opened and dismissed via a real Escape key, no horizontal overflow, and no uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       mainScreenshots.promptScreenshot,
+      mainScreenshots.podiumScreenshot,
       mainScreenshots.finishedViewScreenshot,
       mainScreenshots.homeScreenshot,
       mainScreenshots.mobilePromptScreenshot,
+      mainScreenshots.mobilePodiumScreenshot,
       mainScreenshots.mobileFinishedScreenshot
     ].join(", ")}`);
   } finally {

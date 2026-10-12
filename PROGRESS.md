@@ -2,20 +2,122 @@
 
 ## Current verified state
 
-- Phase: `finish-game` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `celebrate-podium` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, and finish/read-only standings).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, finish/read-only standings, and the podium celebration).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `finish-game` PR; then plan `celebrate-podium` from updated `main`.
+- Next step: merge the `celebrate-podium` PR; then plan `play-again` from updated `main`.
 - Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`,
   `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`,
-  `handle-storage-failure`, and `finish-game` are `accepted`; remaining slices
-  are `not_started`.
+  `handle-storage-failure`, `finish-game`, and `celebrate-podium` are
+  `accepted`; remaining slices are `not_started`.
 - Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Podium celebration implementation (celebrate-podium)
+
+- Added `src/standings.js`: pure `podiumRows(game)` =
+  `rankPlayers(game).filter((row) => row.rank <= 3)` — a fresh array per call,
+  input never mutated, no rank stored; ties never collapsed. Extended
+  `scripts/standings-test.mjs` with the 1,1,3 / 1,2,2-with-rank-4-exclusion /
+  20-tied cases, guard cases, immutability, and freshness assertions.
+- Extended `src/main.js`: `state.podiumOpen` (default `false`, reset exactly
+  where `finishPromptOpen` resets — `resetSetup`, `handleResume`, and the
+  back-home handler). The `handleFinishGame` success path keeps the accepted
+  `persistActiveGameSnapshot()` unchanged, then sets
+  `podiumOpen = podiumRows(result.game).length > 0` and makes the heading
+  focus conditional (only when no podium opened). `renderFinishedGame`
+  renders the app's first `<dialog>` (`.podium-dialog`,
+  `aria-labelledby="podium-title"`, `aria-describedby="podium-lede"`) only
+  when the flag is set and rows exist, calls `showModal()` behind an
+  `!dialog.open` guard, and focuses the Close button. Markup: `.podium-body`
+  (padding + `position: relative`) with the `aria-hidden` confetti layer
+  (14 deterministic pieces, inline custom properties for left/delay/duration/
+  drift/spin/size/color from the marker tokens), "Final podium" title, lede,
+  an `aria-label="Podium players"` `<ol>` of ascending rank groups with empty
+  groups omitted, and the `podium-close` Close button. Podium rows reuse
+  `.player-token` spans and the `"{name}: rank {rank}, total {total}"` label
+  convention. Dismissal funnels through one synchronous idempotent cleanup
+  (`handlePodiumClose`: clear flag → `render()` without the dialog → focus
+  `[data-active-heading]`).
+- Styled `src/styles.css`: `.podium-dialog` (`width: min(calc(100vw - 24px),
+  560px)`, `max-height: calc(100svh - 24px)`, `overflow: auto`, surface/
+  border/radius/shadow tokens, `::backdrop` scrim), `.podium-body`,
+  `.podium-confetti` (absolute inset, hidden overflow, pointer-events none),
+  `.confetti-piece` + one `@keyframes podium-fall` (durations 1.6–2.39s,
+  delays 0–0.79s, iteration-count 1, forwards, ends at opacity 0, animated
+  top/transform), `.podium-title`/`.podium-lede`/`.podium-groups`/
+  `.podium-group.is-rank-one` (surface-strong emphasis)/`.podium-rank-heading`
+  /`.podium-player*` (four-column grid mirroring `.is-final`, ≤360px
+  compaction), full-width `.podium-close` (≥44px via `.primary-action`), an
+  explicit `@media (prefers-reduced-motion: reduce) { .podium-confetti {
+  display: none; } }`, and no changes to existing rules.
+- Tests: new `scripts/browser-podium-test.mjs` (five isolated Chrome sessions
+  covering Scenarios 1–7, with local `pressEscape`/`pressSpace`/`pressTab`
+  real-key helpers, real backdrop clicks via CDP mouse events, and
+  `Emulation.setEmulatedMedia` reduced-motion emulation) and honest updates to
+  `scripts/browser-finish-game-test.mjs` (podium-open/focus assertions after
+  confirm, dismiss-before-goHome, Escape in the 320px walk, no-podium-on-
+  reopen at both reopen points, podium assertions in the blocked-write and
+  suppression sessions, two new screenshots). Wired `test:browser:podium`
+  into `package.json`'s `test` chain and added the new script to `init.sh`'s
+  `node --check` list. No new `src/*` module, so the static-server allowlist,
+  smoke assets, and required-file list are unchanged.
+- Fixed during self-verification: two test-flow bugs (missing `goHome` calls
+  between games) and two real platform findings confirmed with minimal-page
+  repros and recorded in the spec — (1) Chrome 154 dispatches the dialog
+  `close` event as a queued task that can be delayed for seconds or starved
+  indefinitely on hidden pages, so dismissal cleanup cannot rely on it alone;
+  the implementation funnels Close/backdrop/Escape (native `cancel` with
+  `preventDefault`) through the same synchronous cleanup, keeping the
+  `close` listener as an idempotent fallback; (2) with a dialog whose only
+  focusable is its Close button, the native modal trap alternates between
+  wrapping to that control and transiently resting on `body` before
+  recapturing on the next Tab — focus never reaches background controls and
+  the dialog stays open, so the suite asserts that guarantee honestly instead
+  of a strictly always-inside cycle.
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:standings` passed with the podiumRows cases;
+  `npm run test:browser:podium` passed on real headless Chrome across all
+  five sessions (ties 1,1,3 with no fabricated rank-2 group; rank-4
+  exclusion; 20-tied single scrolling rank-1 group with internal scroll at
+  1280×800 and 320×720 and no page overflow; Close/Escape/backdrop/Space/
+  Enter dismissals returning focus to the heading; no re-celebration on
+  reopen; byte-identical payloads across open/dismiss including blocked-write
+  and invalid-read suppression with code-only warnings; reduced-motion
+  confetti `display: none`; ≥44px Close; visible focus; zero uncaught console
+  errors); `npm run test:browser:finish-game` passed with the honest updates;
+  `npm run test` passed end to end with all eight browser suites chained and
+  the six suites other than finish-game unmodified; `./init.sh` and
+  `CI=true ./init.sh` passed and exited without starting a server; the
+  `npm run dev` probe returned 200 for `/`, `/src/standings.js`,
+  `/src/main.js`, and `/src/styles.css` and 404 for `/AGENTS.md`.
+  Screenshots under
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-celebrate-podium/`
+  (4 files) plus the finish-game suite's two podium captures could not be
+  opened for visual inspection this session because temp-directory reads are
+  permission-blocked; layout, visibility, overflow, scroll, target sizes, and
+  computed styles were asserted programmatically. The manual real-browser
+  pass is covered by the automated real-Chrome sessions at 1280×800 and
+  320×720 with real-key and real-mouse dismissal walks.
+- Updated README (podium behavior + new command), ARCHITECTURE.md
+  (podiumRows, podium display layer, first `<dialog>` modal, dismissal
+  funnel), and CONSTRAINTS.md (durable rules: display-only celebration with
+  ties never collapsed, zero writes/persisted fields, never re-celebrate on
+  revisit, synchronous modal dismissal cleanup, and reduced-motion
+  suppression).
+- Next: run independent `$feature-validator` for `celebrate-podium`; after
+  acceptance, commit `feat: complete celebrate-podium`, push
+  `codex/celebrate-podium`, and open the PR (the untracked spec file
+  `docs/specs/celebrate-podium.md` belongs to this feature's PR).
+- Independent validator verdict: `accept`. Reran both gate modes,
+  standings/podium/finish-game suites, HTTP boundary probes, and a static
+  spec-conformance review of the full diff; no security findings; the honest
+  finish-game suite updates and the two documented Chrome platform findings
+  were confirmed.
 
 ### 2026-10-12 — Finish-game implementation (finish-game)
 

@@ -22,3 +22,7 @@ export function rankPlayers(game) {
 
   return ranked;
 }
+
+export function podiumRows(game) {
+  return rankPlayers(game).filter((row) => row.rank <= 3);
+}

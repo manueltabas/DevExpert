@@ -17,7 +17,7 @@ import {
   parseScoreAmount,
   undoLastScoreChange
 } from "./score.js";
-import { rankPlayers } from "./standings.js";
+import { podiumRows, rankPlayers } from "./standings.js";
 import { finishGame } from "./game.js";
 import {
   loadSavedGames,
@@ -36,6 +36,7 @@ const state = {
   selectedPlayerId: null,
   scoreFeedback: null,
   finishPromptOpen: false,
+  podiumOpen: false,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -347,6 +348,7 @@ function handleResume(gameId) {
   state.selectedPlayerId = game.players[0]?.id ?? null;
   state.scoreFeedback = null;
   state.finishPromptOpen = false;
+  state.podiumOpen = false;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -620,6 +622,8 @@ function renderFinishSection() {
 }
 
 function renderFinishedGame(game) {
+  const podium = podiumRows(game);
+
   appRoot.innerHTML = `
     <section class="active-layout" aria-labelledby="active-title">
       <div class="active-board">
@@ -651,9 +655,126 @@ function renderFinishedGame(game) {
         </div>
       </div>
     </section>
+    ${state.podiumOpen && podium.length > 0 ? renderPodiumDialog(podium) : ""}
   `;
 
   bindActiveEvents();
+  bindPodiumEvents();
+}
+
+function renderPodiumDialog(podium) {
+  const groups = [1, 2, 3]
+    .map((rank) => {
+      const rows = podium.filter((row) => row.rank === rank);
+
+      if (rows.length === 0) {
+        return "";
+      }
+
+      return `
+        <li class="podium-group${rank === 1 ? " is-rank-one" : ""}">
+          <h3 class="podium-rank-heading">Rank ${rank}</h3>
+          <ul class="podium-players">
+            ${rows.map((row) => renderPodiumPlayer(row.player, row.rank)).join("")}
+          </ul>
+        </li>
+      `;
+    })
+    .join("");
+
+  return `
+    <dialog class="podium-dialog" data-podium-dialog aria-labelledby="podium-title" aria-describedby="podium-lede">
+      <div class="podium-body">
+        <div class="podium-confetti" data-podium-confetti aria-hidden="true">${renderPodiumConfetti()}</div>
+        <h2 id="podium-title" class="podium-title">Final podium</h2>
+        <p id="podium-lede" class="podium-lede">Congratulations to the top of the table.</p>
+        <ol class="podium-groups" aria-label="Podium players">${groups}</ol>
+        <button type="button" class="primary-action podium-close" data-action="close-podium">Close</button>
+      </div>
+    </dialog>
+  `;
+}
+
+function renderPodiumPlayer(player, rank) {
+  const color = getColor(player.color);
+
+  return `
+    <li class="podium-player">
+      <span class="podium-player-rank">${rank}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
+      <span class="podium-player-name">${escapeHtml(player.name)}</span>
+      <span class="podium-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+    </li>
+  `;
+}
+
+function renderPodiumConfetti() {
+  const confettiColors = ["--blue", "--red", "--yellow", "--green", "--orange"];
+  const pieces = [];
+
+  for (let index = 0; index < 14; index += 1) {
+    const left = 3 + ((index * 7) % 94);
+    const delay = ((index * 137) % 80) / 100;
+    const duration = 1.6 + ((index * 29) % 80) / 100;
+    const drift = ((index * 53) % 41) - 20;
+    const spin = (index % 2 === 0 ? 1 : -1) * (240 + ((index * 37) % 200));
+    const size = 8 + (index % 5);
+    const color = confettiColors[index % confettiColors.length];
+
+    pieces.push(
+      `<span class="confetti-piece" style="--confetti-left:${left}%;--confetti-delay:${delay}s;--confetti-duration:${duration}s;--confetti-drift:${drift}px;--confetti-spin:${spin}deg;--confetti-size:${size}px;--confetti-color:var(${color})"></span>`
+    );
+  }
+
+  return pieces.join("");
+}
+
+function bindPodiumEvents() {
+  const dialog = appRoot.querySelector("[data-podium-dialog]");
+
+  if (!dialog) {
+    return;
+  }
+
+  // Chrome dispatches the dialog `close` event as a queued task that can be
+  // delayed (and starved for hidden pages), so every dismissal path funnels
+  // through one synchronous cleanup instead of waiting for that event. The
+  // idempotent `close` listener below stays as a fallback for any other path.
+  const dismissPodium = () => {
+    if (dialog.open) {
+      dialog.close();
+    }
+    handlePodiumClose();
+  };
+
+  appRoot.querySelector("[data-action='close-podium']")?.addEventListener("click", dismissPodium);
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) {
+      dismissPodium();
+    }
+  });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    dismissPodium();
+  });
+  dialog.addEventListener("close", handlePodiumClose);
+
+  if (state.podiumOpen) {
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    appRoot.querySelector("[data-action='close-podium']")?.focus();
+  }
+}
+
+function handlePodiumClose() {
+  if (!state.podiumOpen) {
+    return;
+  }
+
+  state.podiumOpen = false;
+  render();
+  appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
 function renderFinishedPlayer(player, rank) {
@@ -724,6 +845,7 @@ function bindActiveEvents() {
     state.selectedPlayerId = null;
     state.scoreFeedback = null;
     state.finishPromptOpen = false;
+    state.podiumOpen = false;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
   });
@@ -786,9 +908,13 @@ function handleFinishGame() {
   state.finishPromptOpen = false;
   state.scoreFeedback = null;
   persistActiveGameSnapshot();
+  state.podiumOpen = podiumRows(result.game).length > 0;
   render();
   paintStorageNotice();
-  appRoot.querySelector("[data-active-heading]")?.focus();
+
+  if (!state.podiumOpen) {
+    appRoot.querySelector("[data-active-heading]")?.focus();
+  }
 }
 
 function handleScoreSubmit() {
@@ -925,6 +1051,7 @@ function resetSetup() {
   state.selectedPlayerId = null;
   state.scoreFeedback = null;
   state.finishPromptOpen = false;
+  state.podiumOpen = false;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;
