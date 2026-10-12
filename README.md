@@ -54,8 +54,11 @@ the highest total leads, equal totals share a competition rank (12, 12, 8 →
 ranks 1, 1, 3), and tied players keep their creation order. Pick a player with
 its row's **Add points** button, type a signed whole-number amount
 (−1,000,000 to 1,000,000), and choose **Save points** to see the leaderboard
-re-rank immediately; the confirmation names the player's new rank. Zero,
-decimals, and out-of-range amounts are rejected with a clear message. Choose
+re-rank immediately; the confirmation names the player's new rank. The score
+field accepts plain signed integers only — letter characters such as `e`
+(scientific notation) are rejected as you type and can never be saved. Zero,
+decimals, out-of-range amounts, and non-plain forms like `1e3` are rejected
+with a clear message. Choose
 **Undo last score** to reverse the most recent change: the affected player's
 total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
@@ -128,5 +131,6 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `play-again` is accepted and
-merged, the next feature is `restrict-score-entry-input`.
+Run `$feature-flow` one feature at a time. Every listed feature is
+implemented; `restrict-score-entry-input` is the final slice, awaiting
+independent validation and merge.

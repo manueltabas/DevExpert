@@ -4,6 +4,8 @@ import {
   MAX_SCORE_ABS,
   SCORE_ERROR_CODES,
   applyScoreChange,
+  isPlainIntegerText,
+  isPlainScoreDraft,
   parseScoreAmount,
   undoLastScoreChange
 } from "../src/score.js";
@@ -37,13 +39,55 @@ assert.deepEqual(parseScoreAmount("1000001"), { error: "out-of-range" });
 assert.deepEqual(parseScoreAmount("-1000001"), { error: "out-of-range" });
 assert.deepEqual(parseScoreAmount("1e30"), { error: "out-of-range" });
 
-// parseScoreAmount: accepted signed integers, including semantic forms
+// parseScoreAmount: accepted signed integers
+// The plain-format gate (restrict-score-entry-input) supersedes the old
+// semantic-parse decision: only plain signed integer text saves now.
 assert.deepEqual(parseScoreAmount("10"), { amount: 10 });
 assert.deepEqual(parseScoreAmount(" -3 "), { amount: -3 });
 assert.deepEqual(parseScoreAmount("+7"), { amount: 7 });
+assert.deepEqual(parseScoreAmount("+10"), { amount: 10 });
 assert.deepEqual(parseScoreAmount("1000000"), { amount: 1000000 });
 assert.deepEqual(parseScoreAmount("-1000000"), { amount: -1000000 });
-assert.deepEqual(parseScoreAmount("1e3"), { amount: 1000 });
+assert.deepEqual(parseScoreAmount("1e3"), { error: "not-a-number" });
+
+// parseScoreAmount: exact-integer text that is not plain still parses to an
+// in-range nonzero integer, so the new final gate is what rejects it.
+assert.deepEqual(parseScoreAmount("0x10"), { error: "not-a-number" });
+assert.deepEqual(parseScoreAmount("10."), { error: "not-a-number" });
+
+// isPlainIntegerText: the save-side plain-format contract
+assert.equal(isPlainIntegerText("10"), true);
+assert.equal(isPlainIntegerText("+7"), true);
+assert.equal(isPlainIntegerText(" -3 "), true);
+assert.equal(isPlainIntegerText("-0"), true);
+assert.equal(isPlainIntegerText("0"), true);
+assert.equal(isPlainIntegerText("1e3"), false);
+assert.equal(isPlainIntegerText("1e-3"), false);
+assert.equal(isPlainIntegerText("10."), false);
+assert.equal(isPlainIntegerText("0x10"), false);
+assert.equal(isPlainIntegerText(""), false);
+assert.equal(isPlainIntegerText("-"), false);
+assert.equal(isPlainIntegerText("abc"), false);
+assert.equal(isPlainIntegerText("1 2"), false);
+assert.equal(isPlainIntegerText("1,000"), false);
+
+// isPlainScoreDraft: the entry-guard draft pattern — empty, a lone sign, and
+// a transient decimal stay typable so the save-side errors still apply.
+assert.equal(isPlainScoreDraft(""), true);
+assert.equal(isPlainScoreDraft("-"), true);
+assert.equal(isPlainScoreDraft("+"), true);
+assert.equal(isPlainScoreDraft("12"), true);
+assert.equal(isPlainScoreDraft("-12"), true);
+assert.equal(isPlainScoreDraft("+10"), true);
+assert.equal(isPlainScoreDraft("2.5"), true);
+assert.equal(isPlainScoreDraft("12."), true);
+assert.equal(isPlainScoreDraft(".5"), true);
+assert.equal(isPlainScoreDraft("1e3"), false);
+assert.equal(isPlainScoreDraft("1e"), false);
+assert.equal(isPlainScoreDraft("abc"), false);
+assert.equal(isPlainScoreDraft("1 2"), false);
+assert.equal(isPlainScoreDraft("1,000"), false);
+assert.equal(isPlainScoreDraft("--3"), false);
 
 const { game } = createGame({
   title: "Score test",
@@ -210,4 +254,4 @@ const unsafeUndoGame = {
 };
 assert.equal(undoLastScoreChange({ game: unsafeUndoGame }).error, "not-safe");
 
-console.log("Score tests passed: parse error codes, signed bounds, zero rejection, change log, safe-integer guard, immutability, and latest-change undo.");
+console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, change log, safe-integer guard, immutability, and latest-change undo.");
