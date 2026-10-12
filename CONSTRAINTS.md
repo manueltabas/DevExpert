@@ -23,12 +23,13 @@
   totals, and the full `{ id, playerId, amount }` change log — plus one
   storage-owned `updatedAt` ISO stamp written only on the stored copy. Saves
   happen exactly on successful game mutations (starting a game, saving
-  points, a successful undo); failed validations, selection changes,
-  feedback-only repaints, and no-op undos never write. Never persist rank
-  fields, and never remove saved games in a slice that has no delete feature.
-  Resume restores the saved game verbatim as the active game, so undo works
-  immediately and a successful undo persists the shortened log — undone
-  changes must never reappear after a reload.
+  points, a successful undo, and confirming Finish game); failed
+  validations, selection changes, feedback-only repaints, and no-op undos
+  never write. Never persist rank fields, and never remove saved games in a
+  slice that has no delete feature. Resume restores the saved game verbatim
+  as the active game, so undo works immediately and a successful undo
+  persists the shortened log — undone changes must never reappear after a
+  reload.
 - Storage helpers (`src/storage.js`) must never throw: reads return
   `{ games, error, droppedCount }` with codes `unavailable` (missing/throwing
   storage) and `invalid` (unparseable, wrong-version, or wrong-shape payload;
@@ -62,6 +63,29 @@
   keep creation order via `player.order` (falling back to the original array
   index). Never store rank fields on players or games, never write ranking to
   the change log, and never persist ranks.
+- Finishing a game is the one-way lifecycle transition: `finishGame` in
+  `src/game.js` is the only code that sets `status: "finished"`, it accepts
+  only a game whose `status` is `active` (anything else is a
+  `missing-game`/`already-finished` guard result), it returns a new game
+  object without mutating the input or touching players, totals, the change
+  log, or `player.order`, and it stores no fields beyond `status` — no
+  `finishedAt`, no ranks. There is no un-finish: a finished game can never
+  reopen for scoring, and score/undo changes never alter `game.status`.
+  Confirming Finish must run through an explicit confirmation (no
+  `window.confirm`), and finishing persists through
+  `persistActiveGameSnapshot()` as the fourth successful-mutation save
+  trigger, so it obeys the storage-failure rules above: under suppression or
+  a failed write the finish still proceeds in memory, no phantom finished
+  card may appear on home, and no new failure path may be added.
+- A game with `status: "finished"` must render read-only: the full final
+  standings stay visible with render-time competition ranks and unchanged
+  aria-labels, but every score mutation control is absent (no Add points
+  buttons, no `aria-pressed` selection, no score-entry panel, no Save points,
+  no undo), the read-only explanation is a polite `role="status"` line, and
+  reopening a finished game from the home Finished games panel must restore
+  exactly the same read-only guarantees. Finished games are listed only in
+  the Finished games panel with View results controls; the Unfinished panel
+  filter stays `status === "active"`.
 - Undo always reverses the newest `{ id, playerId, amount }` entry in
   `game.changes`: subtract that change's amount from its recipient's total and
   drop the entry, one change per activation, with no depth limit. A missing,

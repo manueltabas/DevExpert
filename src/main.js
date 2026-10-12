@@ -18,6 +18,7 @@ import {
   undoLastScoreChange
 } from "./score.js";
 import { rankPlayers } from "./standings.js";
+import { finishGame } from "./game.js";
 import {
   loadSavedGames,
   orderSavedGamesForDisplay,
@@ -34,6 +35,7 @@ const state = {
   activeGame: null,
   selectedPlayerId: null,
   scoreFeedback: null,
+  finishPromptOpen: false,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -51,7 +53,9 @@ const SCORE_ERROR_MESSAGES = {
   "out-of-range": `Amounts must stay between ${-MAX_SCORE_ABS} and ${MAX_SCORE_ABS}.`,
   "unknown-player": "Select a player before saving points.",
   "not-safe": "That change would create an unsafe total. Try a smaller amount.",
-  "nothing-to-undo": "Nothing to undo yet."
+  "nothing-to-undo": "Nothing to undo yet.",
+  "missing-game": "No open game to finish.",
+  "already-finished": "This game is already finished."
 };
 
 const SCORE_FEEDBACK_CLASS_NAMES = {
@@ -103,6 +107,7 @@ function render() {
 
 function renderHome() {
   const activeGames = orderSavedGamesForDisplay(state.savedGames).filter((game) => game.status === "active");
+  const finishedGames = orderSavedGamesForDisplay(state.savedGames).filter((game) => game.status === "finished");
   const suppressionActive = state.storageReadError === "invalid";
 
   appRoot.innerHTML = `
@@ -154,10 +159,11 @@ function renderHome() {
             <h2 id="finished-title">Finished games</h2>
           </div>
         </div>
+        ${finishedGames.length > 0 ? renderFinishedGameList(finishedGames) : `
         <div class="empty-state">
-          <p class="empty-title">Podiums will live here.</p>
-          <p>Finished games will appear here once results are added.</p>
-        </div>
+          <p class="empty-title">No finished games yet.</p>
+          <p>Finish a game and its standings will appear here.</p>
+        </div>`}
       </article>
     </section>
   `;
@@ -170,6 +176,12 @@ function renderHome() {
   });
 
   appRoot.querySelectorAll("[data-action='resume-game']").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleResume(button.dataset.gameId);
+    });
+  });
+
+  appRoot.querySelectorAll("[data-action='view-results']").forEach((button) => {
     button.addEventListener("click", () => {
       handleResume(button.dataset.gameId);
     });
@@ -268,6 +280,39 @@ function renderSavedGameCard(game) {
   `;
 }
 
+function renderFinishedGameList(games) {
+  return `
+    <ol class="saved-game-list" aria-label="Finished games">
+      ${games.map((game) => renderFinishedGameCard(game)).join("")}
+    </ol>
+  `;
+}
+
+function renderFinishedGameCard(game) {
+  const players = Array.isArray(game.players) ? game.players : [];
+  const names = players
+    .map((player) => (player && typeof player.name === "string" ? escapeHtml(player.name) : ""))
+    .filter((name) => name !== "")
+    .join(", ");
+  const markers = players
+    .map((player) => `<span class="marker ${getColor(player?.color).cssClass}" aria-hidden="true"></span>`)
+    .join("");
+  const gameId = escapeAttribute(game.id ?? "");
+
+  return `
+    <li class="saved-game saved-game-finished" data-saved-game-id="${gameId}">
+      <div class="saved-game-info">
+        <p class="saved-game-title">${escapeHtml(game.title ?? "Untitled game")}</p>
+        <p class="saved-game-meta">${players.length} players</p>
+        <p class="saved-game-updated">${escapeHtml(formatSavedGameUpdated(game))}</p>
+        ${names ? `<p class="saved-game-names">${names}</p>` : ""}
+        ${markers ? `<div class="saved-game-markers">${markers}</div>` : ""}
+      </div>
+      <button type="button" class="secondary-action resume-action" data-action="view-results" data-game-id="${gameId}" aria-label="View results ${escapeAttribute(game.title ?? "this game")}">View results</button>
+    </li>
+  `;
+}
+
 function formatSavedGameUpdated(game) {
   for (const candidate of [game?.updatedAt, game?.createdAt]) {
     if (typeof candidate !== "string" || candidate.trim() === "") {
@@ -301,6 +346,7 @@ function handleResume(gameId) {
   state.activeGame = game;
   state.selectedPlayerId = game.players[0]?.id ?? null;
   state.scoreFeedback = null;
+  state.finishPromptOpen = false;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -494,6 +540,11 @@ function renderActiveGame() {
     return;
   }
 
+  if (game.status === "finished") {
+    renderFinishedGame(game);
+    return;
+  }
+
   if (!game.players.some((player) => player.id === state.selectedPlayerId)) {
     state.selectedPlayerId = game.players[0]?.id ?? null;
   }
@@ -537,11 +588,85 @@ function renderActiveGame() {
           </div>
         </div>
         ${selectedPlayer ? renderScoreForm(selectedPlayer) : ""}
+        ${renderFinishSection()}
       </aside>
     </section>
   `;
 
   bindActiveEvents();
+}
+
+function renderFinishSection() {
+  if (state.finishPromptOpen) {
+    return `
+      <div class="finish-section" data-finish-section>
+        <div class="finish-prompt">
+          <p class="finish-prompt-title">Finish this game?</p>
+          <p id="finish-warning" class="finish-prompt-warning">Finished games can't be reopened for scoring. Final standings stay saved in this browser.</p>
+          <div class="finish-prompt-actions">
+            <button type="button" class="finish-action" data-action="confirm-finish" aria-describedby="finish-warning">Finish game</button>
+            <button type="button" class="secondary-action" data-action="cancel-finish">Cancel</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="finish-section" data-finish-section>
+      <button type="button" class="finish-action" data-action="open-finish">Finish game</button>
+    </div>
+  `;
+}
+
+function renderFinishedGame(game) {
+  appRoot.innerHTML = `
+    <section class="active-layout" aria-labelledby="active-title">
+      <div class="active-board">
+        <div class="active-header">
+          <button type="button" class="ghost-action" data-action="back-home">All games</button>
+          <div>
+            <p class="eyebrow">Finished</p>
+            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(game.title)}</h2>
+          </div>
+          <span class="status-pill">${game.players.length} players</span>
+        </div>
+
+        <div class="panel roster-panel">
+          <div class="panel-heading">
+            <span class="dice-card" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+            <div>
+              <p class="eyebrow">Leaderboard</p>
+              <h3>Highest total leads; ties share rank.</h3>
+            </div>
+          </div>
+
+          <p class="finished-note" role="status" data-finished-note>Final standings — this game is finished and can't be scored.</p>
+
+          ${renderStorageNotice()}
+
+          <ol class="active-roster" aria-label="Active game players">
+            ${rankPlayers(game).map((row) => renderFinishedPlayer(row.player, row.rank)).join("")}
+          </ol>
+        </div>
+      </div>
+    </section>
+  `;
+
+  bindActiveEvents();
+}
+
+function renderFinishedPlayer(player, rank) {
+  const color = getColor(player.color);
+
+  return `
+    <li class="active-player is-final" data-player-id="${escapeAttribute(player.id)}">
+      <span class="active-player-rank">${rank}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
+      <span class="active-player-name">${escapeHtml(player.name)}</span>
+      <span class="active-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+    </li>
+  `;
 }
 
 function renderActivePlayer(player, rank, isSelected) {
@@ -598,6 +723,7 @@ function bindActiveEvents() {
     state.view = "home";
     state.selectedPlayerId = null;
     state.scoreFeedback = null;
+    state.finishPromptOpen = false;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
   });
@@ -625,6 +751,44 @@ function bindActiveEvents() {
   appRoot.querySelector("[data-action='undo-last-score']")?.addEventListener("click", () => {
     handleUndo();
   });
+
+  appRoot.querySelector("[data-action='open-finish']")?.addEventListener("click", () => {
+    state.finishPromptOpen = true;
+    render();
+    appRoot.querySelector("[data-action='confirm-finish']")?.focus();
+  });
+
+  appRoot.querySelector("[data-action='cancel-finish']")?.addEventListener("click", () => {
+    state.finishPromptOpen = false;
+    state.scoreFeedback = null;
+    render();
+    appRoot.querySelector("[data-action='open-finish']")?.focus();
+  });
+
+  appRoot.querySelector("[data-action='confirm-finish']")?.addEventListener("click", () => {
+    handleFinishGame();
+  });
+}
+
+function handleFinishGame() {
+  const result = finishGame({ game: state.activeGame });
+
+  if (result.error || !result.game) {
+    state.scoreFeedback = {
+      kind: "error",
+      message: SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["missing-game"]
+    };
+    paintScoreFeedback();
+    return;
+  }
+
+  state.activeGame = result.game;
+  state.finishPromptOpen = false;
+  state.scoreFeedback = null;
+  persistActiveGameSnapshot();
+  render();
+  paintStorageNotice();
+  appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
 function handleScoreSubmit() {
@@ -760,6 +924,7 @@ function resetSetup() {
   state.activeGame = null;
   state.selectedPlayerId = null;
   state.scoreFeedback = null;
+  state.finishPromptOpen = false;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;

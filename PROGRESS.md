@@ -2,17 +2,119 @@
 
 ## Current verified state
 
-- Phase: `handle-storage-failure` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `finish-game` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, and storage-failure feedback).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, and finish/read-only standings).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `handle-storage-failure` PR; then plan `finish-game` from updated `main`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`, and `handle-storage-failure` are `accepted`; remaining slices are `not_started`.
+- Next step: merge the `finish-game` PR; then plan `celebrate-podium` from updated `main`.
+- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`,
+  `rank-leaderboard`, `undo-latest-score`, `resume-saved-game`,
+  `handle-storage-failure`, and `finish-game` are `accepted`; remaining slices
+  are `not_started`.
 - Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Finish-game implementation (finish-game)
+
+- Added `src/game.js`: pure `finishGame({ game, now = new Date() })` — the
+  one-way `active → finished` transition. Guards: missing/invalid game
+  (non-object, array, or players not an array) → `{ game: null, error:
+  "missing-game" }`; any non-active `status` → `{ game: null, error:
+  "already-finished" }`. Success returns `{ game: { ...game, status:
+  "finished" }, error: null }` — a new object; input never mutated; players,
+  totals, changes, and `player.order` untouched; no fields beyond `status`
+  (no `finishedAt`, no ranks; the `now` parameter is part of the signature
+  but deliberately stores nothing). Error codes live in the local
+  `GAME_ERROR_CODES` list, separate from `SCORE_ERROR_CODES`.
+- Extended `src/main.js`: `state.finishPromptOpen` (default `false`) renders
+  an inline finish section in the score-entry panel below the score form
+  (outside the form element): opener "Finish game" swaps to the prompt —
+  "Finish this game?" plus the warning "Finished games can't be reopened for
+  scoring. Final standings stay saved in this browser." — with a confirm
+  "Finish game" button (`aria-describedby` pointing at the warning) and
+  "Cancel". No `window.confirm`, no `<dialog>`. Explicit focus moves: open →
+  confirm button, cancel → opener, finish → `[data-active-heading]`.
+  `renderActiveGame` branches on `game.status === "finished"` to
+  `renderFinishedGame`: same header (eyebrow "Finished"), "All games" back
+  control, storage notice, and full `rankPlayers(game)` leaderboard with
+  unchanged aria-labels, but a polite `role="status"` line reading "Final
+  standings — this game is finished and can't be scored." and zero mutation
+  controls (no Add points buttons, no `aria-pressed`/`.is-selected`, no score
+  panel, no Save points, no undo) via `.active-player.is-final` rows.
+  Confirming calls `finishGame`, sets `state.activeGame`, then the unchanged
+  `persistActiveGameSnapshot()` — the fourth successful-mutation save trigger
+  — so suppression/rollback/notice behavior applies as accepted. Error codes
+  `missing-game`/`already-finished` joined `SCORE_ERROR_MESSAGES` and repaint
+  `#score-feedback` without re-render. The prompt flag resets in
+  `resetSetup`, `handleResume`, and the active back-home handler.
+  `renderHome` replaces the finished-games placeholder with an `<ol
+  aria-label="Finished games">` built from `orderSavedGamesForDisplay`
+  filtered to `status === "finished"`; cards reuse the `.saved-game`
+  structure with a "View results" button (`data-action="view-results"`,
+  `aria-label="View results {title}"`) wired through the existing
+  `handleResume`, so reopening is read-only via the status branch. New empty
+  state: "No finished games yet." / "Finish a game and its standings will
+  appear here."
+- Styled `src/styles.css`: `.finish-section` (top-border separation),
+  `.finish-action` (≥44px, #9f271e on `--surface-strong`, 7.05:1 AA,
+  distinct from Save/Undo), `.finish-prompt`/`.finish-prompt-title`/
+  `.finish-prompt-warning`/`.finish-prompt-actions`, `.finished-note`
+  (role=status card), and `.active-player.is-final` four-column grid variants
+  (desktop and ≤480px areas without the button row). No new tokens; 8px
+  rhythm; focus outline inherited.
+- Tests: new `scripts/game-test.mjs` (guards, immutability via
+  structuredClone, key equality with no new fields, preserved change
+  log/order, double-finish rejection, fresh and 20-player games, local error
+  code list) and `scripts/browser-finish-game-test.mjs` (three isolated
+  Chrome sessions covering spec Scenarios 1–5: cancel→score→undo with
+  byte-identical payload, locked view assertions, stored `status: "finished"`,
+  reload/reopen with identical ranks/totals plus an untouched active game,
+  blocked-write and invalid-suppression finishes with code-only warnings and
+  byte-identical raw payload, 320px overflow/target checks, real-keyboard
+  Tab/Enter walk with visible focus, `role="status"`, and zero uncaught
+  console errors). Wired `test:game` and `test:browser:finish-game` into
+  `package.json`'s `test` chain; added `src/game.js` to the
+  `scripts/static-server.mjs` allowlist and `scripts/smoke.mjs` asset check;
+  added `src/game.js` to the required-file list and the two new scripts to
+  the `node --check` list in `init.sh`. Existing suites ran unmodified.
+- Updated README (finishing behavior + new commands), ARCHITECTURE.md (game
+  lifecycle boundary, finished variant, Finished list, fourth save trigger),
+  and CONSTRAINTS.md (durable rules: one-way finish via `finishGame`, no
+  un-finish, explicit confirmation, read-only finished rendering, fourth save
+  trigger obeying storage-failure rules).
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:game` passed; `npm run test:browser:finish-game` passed on
+  real headless Chrome across all three sessions with zero uncaught console
+  errors and code-only warnings; `npm run test` passed end to end with all
+  seven browser suites chained; `./init.sh` and `CI=true ./init.sh` passed
+  and exited without starting a server; `npm run dev` probe returned 200 for
+  `/`, `/src/game.js`, `/src/main.js`, and `/src/styles.css` and 404 for
+  `/AGENTS.md`. Screenshots under
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-finish-game/`
+  (5 files, desktop + 320px) could not be opened for visual inspection this
+  session because temp-directory reads are permission-blocked; layout,
+  visibility, contrast tokens, ≥44px targets, and 320px overflow were
+  asserted programmatically. The manual real-browser pass is covered by the
+  three automated real-Chrome sessions.
+- Fixed during self-verification: the 20-player unit loop initially used
+  `amount: index - 5`, which hits the rejected zero amount at index 5;
+  corrected to nonzero amounts. The new suite's session runner initially
+  dropped the callbacks' screenshot paths and the keyboard-focus check read
+  the computed outline after synthetic clicks, where `:focus-visible` does
+  not match; fixed by returning the callback result and asserting the
+  visible outline on genuinely keyboard-focused elements after a real Tab.
+- Next: run independent `$feature-validator` for `finish-game`; after
+  acceptance, commit `feat: complete finish-game`, push the branch, and open
+  the PR (the untracked spec file `docs/specs/finish-game.md` belongs to this
+  feature's PR).
+- Independent validator verdict: `accept`. Reran both gate modes, game and
+  finish-game suites, HTTP boundary probes, and an independent browser probe
+  (confirm outside the score form, real Space/Enter flows, payload gains
+  nothing beyond status, shared ranks 1,2,2 in final standings); no security
+  findings; six existing browser suites untouched and green.
 
 ### 2026-10-12 — Storage-failure feedback implementation (handle-storage-failure)
 
