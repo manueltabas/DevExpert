@@ -30,12 +30,27 @@
   immediately and a successful undo persists the shortened log — undone
   changes must never reappear after a reload.
 - Storage helpers (`src/storage.js`) must never throw: reads return
-  `{ games, error }` with codes `unavailable` (missing/throwing storage) and
-  `invalid` (unparseable, wrong-version, or wrong-shape payload; unusable
-  entries are dropped with a warning), writes return `{ saved, error }` with
-  codes `unavailable` and `write`. Diagnostics log only error codes — never
-  player names, titles, or scores. User-facing storage-failure UX and deep
-  malformed-data recovery belong to `handle-storage-failure`.
+  `{ games, error, droppedCount }` with codes `unavailable` (missing/throwing
+  storage) and `invalid` (unparseable, wrong-version, or wrong-shape payload;
+  unusable entries are dropped with a warning and counted in `droppedCount`,
+  which is 0 for clean and failed reads), writes return `{ saved, error }`
+  with codes `unavailable` and `write`. Diagnostics log only error codes —
+  never player names, titles, or scores.
+- Storage failures must never be silent, and stored data must never be
+  silently lost or overwritten:
+  - While the startup read is `invalid`, every write is suppressed for the
+    session — no `upsertSavedGame` mutation and no `saveGames` call — so an
+    unreadable stored payload is preserved byte-for-byte; suppression lifts
+    only on reload. Writes after an `unavailable` read are still attempted.
+  - A failed write must roll back the in-memory `upsertSavedGame` mutation so
+    the UI never presents an unsaved game as saved, and no save may claim
+    success it did not have; the first successful save clears the failure
+    notice (and a prior `unavailable` read error).
+  - Storage-failure feedback is a single polite live region
+    (`role="status"`, `.storage-notice`) on home and in the active game plus
+    a home-only info note for skipped entries; notices carry no retry or
+    dismiss buttons — every subsequent mutation auto-retries the save — and
+    diagnostics stay code-only.
 - Score changes are signed whole numbers with magnitude at most 1,000,000.
   Zero entries are rejected and create no change-log entry; decimals,
   non-numbers, and out-of-range amounts are rejected without changing totals.

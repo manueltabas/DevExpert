@@ -35,6 +35,9 @@ const state = {
   selectedPlayerId: null,
   scoreFeedback: null,
   savedGames: [],
+  storageReadError: null,
+  storageDroppedCount: 0,
+  lastSaveError: null,
   errors: [],
   limitMessage: "",
   nextRowNumber: MIN_PLAYERS + 1
@@ -57,8 +60,17 @@ const SCORE_FEEDBACK_CLASS_NAMES = {
   "info": "info-message"
 };
 
+const STORAGE_NOTICE_MESSAGES = {
+  "invalid": "Saved game data couldn't be read, so saved games can't be shown and new changes won't be saved. Nothing was deleted. Reloading the page will try again.",
+  "write": "Your latest change couldn't be saved. The game still works, and nothing already saved was lost — your next change will try again.",
+  "unavailable": "Scores aren't being saved because browser storage is unavailable. The game still works, but changes will be lost when you leave this page.",
+  "dropped": "Some saved data couldn't be read and was skipped. Other saved games still work."
+};
+
 const initialSavedState = loadSavedGames();
 state.savedGames = initialSavedState.games;
+state.storageReadError = initialSavedState.error;
+state.storageDroppedCount = initialSavedState.droppedCount ?? 0;
 
 if (initialSavedState.error) {
   console.warn("Saved game load failed:", initialSavedState.error);
@@ -91,6 +103,7 @@ function render() {
 
 function renderHome() {
   const activeGames = orderSavedGamesForDisplay(state.savedGames).filter((game) => game.status === "active");
+  const suppressionActive = state.storageReadError === "invalid";
 
   appRoot.innerHTML = `
     <section class="hero-panel" aria-labelledby="home-title">
@@ -114,10 +127,17 @@ function renderHome() {
             <h2 id="unfinished-title">Unfinished games</h2>
           </div>
         </div>
+        ${renderStorageNotice()}
+        ${renderDroppedEntriesNote()}
         ${activeGames.length > 0 ? renderSavedGameList(activeGames) : `
         <div class="empty-state">
+          ${suppressionActive ? `
+          <p class="empty-title">Saved games can't be shown right now.</p>
+          <p>Nothing was deleted — the saved data just couldn't be read.</p>
+          ` : `
           <p class="empty-title">No saved games yet.</p>
           <p>Start a new game and it will be saved here so you can resume it later.</p>
+          `}
         </div>`}
         <p class="retention-note">Saved only in this browser — clearing site data removes these games.</p>
       </article>
@@ -154,6 +174,65 @@ function renderHome() {
       handleResume(button.dataset.gameId);
     });
   });
+}
+
+function getStorageNotice() {
+  if (state.storageReadError === "invalid") {
+    return "invalid";
+  }
+
+  if (state.lastSaveError) {
+    return state.lastSaveError;
+  }
+
+  if (state.storageReadError === "unavailable") {
+    return "unavailable";
+  }
+
+  return null;
+}
+
+function renderStorageNotice() {
+  const code = getStorageNotice();
+
+  if (!code) {
+    return "";
+  }
+
+  return `
+    <div class="storage-notice" role="status" data-storage-notice>
+      <p class="storage-notice-message">${escapeHtml(STORAGE_NOTICE_MESSAGES[code])}</p>
+    </div>
+  `;
+}
+
+function renderDroppedEntriesNote() {
+  if (!(state.storageDroppedCount > 0)) {
+    return "";
+  }
+
+  return `<p class="storage-notice storage-notice-info">${escapeHtml(STORAGE_NOTICE_MESSAGES.dropped)}</p>`;
+}
+
+function paintStorageNotice() {
+  const region = appRoot.querySelector("[data-storage-notice]");
+
+  if (!region) {
+    return;
+  }
+
+  region.replaceChildren();
+
+  const code = getStorageNotice();
+
+  if (!code) {
+    return;
+  }
+
+  const message = document.createElement("p");
+  message.className = "storage-notice-message";
+  message.textContent = STORAGE_NOTICE_MESSAGES[code];
+  region.append(message);
 }
 
 function renderSavedGameList(games) {
@@ -401,6 +480,7 @@ function bindSetupEvents() {
     state.limitMessage = "";
     persistActiveGameSnapshot();
     render();
+    paintStorageNotice();
     appRoot.querySelector("[data-active-heading]")?.focus();
   });
 }
@@ -440,6 +520,8 @@ function renderActiveGame() {
               <h3>Highest total leads; ties share rank.</h3>
             </div>
           </div>
+
+          ${renderStorageNotice()}
 
           <ol class="active-roster" aria-label="Active game players">
             ${rankPlayers(game).map((row) => renderActivePlayer(row.player, row.rank, row.player.id === state.selectedPlayerId)).join("")}
@@ -581,6 +663,7 @@ function handleScoreSubmit() {
     message: `Added ${parsed.amount} points to ${targetPlayer.name}. New total: ${updatedTotal}. Rank: ${updatedRank}.`
   };
   render();
+  paintStorageNotice();
   appRoot.querySelector("#score-amount")?.focus();
 }
 
@@ -612,6 +695,7 @@ function handleUndo() {
     message: `Undid ${result.undone.amount} points for ${affectedPlayer.name}. New total: ${affectedPlayer.total}. Rank: ${restoredRank}.`
   };
   render();
+  paintStorageNotice();
   appRoot.querySelector("[data-action='undo-last-score']")?.focus();
 }
 
@@ -620,13 +704,28 @@ function persistActiveGameSnapshot() {
     return;
   }
 
+  if (state.storageReadError === "invalid") {
+    console.warn("Game save failed:", "invalid");
+    return;
+  }
+
+  const previousSavedGames = state.savedGames;
   state.savedGames = upsertSavedGame(state.savedGames, state.activeGame, {
     updatedAt: new Date().toISOString()
   });
   const result = saveGames({ games: state.savedGames });
 
   if (result.error) {
+    state.savedGames = previousSavedGames;
+    state.lastSaveError = result.error;
     console.warn("Game save failed:", result.error);
+    return;
+  }
+
+  state.lastSaveError = null;
+
+  if (state.storageReadError === "unavailable") {
+    state.storageReadError = null;
   }
 }
 

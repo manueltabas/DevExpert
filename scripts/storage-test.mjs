@@ -63,14 +63,14 @@ const { game } = createGame({
 const scored = applyScoreChange({ game, playerId: game.players[0].id, amount: 10 });
 
 // loadSavedGames: missing, inert, and throwing storage are "unavailable"
-assert.deepEqual(loadSavedGames({ storage: null }), { games: [], error: "unavailable" });
-assert.deepEqual(loadSavedGames({ storage: undefined }), { games: [], error: "unavailable" });
-assert.deepEqual(loadSavedGames({ storage: {} }), { games: [], error: "unavailable" });
-assert.deepEqual(loadSavedGames({ storage: { getItem: "not-a-function" } }), { games: [], error: "unavailable" });
-assert.deepEqual(loadSavedGames({ storage: createThrowingStorage({ failGet: true }) }), { games: [], error: "unavailable" });
+assert.deepEqual(loadSavedGames({ storage: null }), { games: [], error: "unavailable", droppedCount: 0 });
+assert.deepEqual(loadSavedGames({ storage: undefined }), { games: [], error: "unavailable", droppedCount: 0 });
+assert.deepEqual(loadSavedGames({ storage: {} }), { games: [], error: "unavailable", droppedCount: 0 });
+assert.deepEqual(loadSavedGames({ storage: { getItem: "not-a-function" } }), { games: [], error: "unavailable", droppedCount: 0 });
+assert.deepEqual(loadSavedGames({ storage: createThrowingStorage({ failGet: true }) }), { games: [], error: "unavailable", droppedCount: 0 });
 
 // loadSavedGames: empty storage is a clean empty list, not an error
-assert.deepEqual(loadSavedGames({ storage: createMemoryStorage() }), { games: [], error: null });
+assert.deepEqual(loadSavedGames({ storage: createMemoryStorage() }), { games: [], error: null, droppedCount: 0 });
 
 // loadSavedGames: malformed payloads are "invalid" and the stored payload stays untouched
 const invalidPayloads = [
@@ -115,6 +115,7 @@ const mixedStorage = createMemoryStorage({ [STORAGE_KEY]: mixedPayload });
 const mixedLoad = captureWarnings(() => loadSavedGames({ storage: mixedStorage }));
 assert.equal(mixedLoad.result.error, null);
 assert.deepEqual(mixedLoad.result.games, [goodEntry], "only usable entries survive the crash guard");
+assert.equal(mixedLoad.result.droppedCount, 8, "every skipped entry is reported through droppedCount");
 assert.equal(mixedLoad.warnings.length, 8, "every dropped entry warns once");
 for (const warning of mixedLoad.warnings) {
   assert.doesNotMatch(warning, /Alex|Sam|Storage test|10/, "diagnostics must not include names, titles, or scores");
@@ -124,7 +125,25 @@ assert.deepEqual(JSON.parse(mixedStorage.dump()[STORAGE_KEY]), originalMixed, "r
 
 // loadSavedGames: empty games list is valid
 const emptyEnvelopeStorage = createMemoryStorage({ [STORAGE_KEY]: JSON.stringify({ version: 1, games: [] }) });
-assert.deepEqual(loadSavedGames({ storage: emptyEnvelopeStorage }), { games: [], error: null });
+assert.deepEqual(loadSavedGames({ storage: emptyEnvelopeStorage }), { games: [], error: null, droppedCount: 0 });
+
+// loadSavedGames: droppedCount is 0 whenever the read itself fails
+for (const raw of invalidPayloads.slice(0, 2)) {
+  const storage = createMemoryStorage({ [STORAGE_KEY]: raw });
+  const failedLoad = loadSavedGames({ storage });
+  assert.equal(failedLoad.error, "invalid");
+  assert.equal(failedLoad.droppedCount, 0, "an invalid envelope must not report dropped entries");
+}
+
+// loadSavedGames: an envelope of only unusable entries is a clean read with every entry dropped
+const allUnusableStorage = createMemoryStorage({
+  [STORAGE_KEY]: JSON.stringify({ version: 1, games: [null, "a string", { id: 7, players: [] }] })
+});
+const allUnusableLoad = captureWarnings(() => loadSavedGames({ storage: allUnusableStorage }));
+assert.equal(allUnusableLoad.result.error, null);
+assert.deepEqual(allUnusableLoad.result.games, []);
+assert.equal(allUnusableLoad.result.droppedCount, 3, "each skipped entry increments droppedCount");
+assert.equal(allUnusableLoad.warnings.length, 3);
 
 // saveGames: writing succeeds and round-trips through loadSavedGames
 const roundTripStorage = createMemoryStorage();
@@ -133,6 +152,7 @@ const roundTripGames = upsertSavedGame([], scored.game, { updatedAt: savedAt });
 assert.deepEqual(saveGames({ games: roundTripGames, storage: roundTripStorage }), { saved: true, error: null });
 const roundTrip = loadSavedGames({ storage: roundTripStorage });
 assert.equal(roundTrip.error, null);
+assert.equal(roundTrip.droppedCount, 0, "a clean read reports no dropped entries");
 assert.deepEqual(roundTrip.games, roundTripGames);
 assert.equal(roundTrip.games[0].updatedAt, savedAt);
 
@@ -153,7 +173,7 @@ assert.deepEqual(saveGames({ games: roundTripGames, storage: failingWriteStorage
 // saveGames: a non-array games argument still writes a valid empty envelope
 const defensiveStorage = createMemoryStorage();
 assert.deepEqual(saveGames({ games: "oops", storage: defensiveStorage }), { saved: true, error: null });
-assert.deepEqual(loadSavedGames({ storage: defensiveStorage }), { games: [], error: null });
+assert.deepEqual(loadSavedGames({ storage: defensiveStorage }), { games: [], error: null, droppedCount: 0 });
 
 // upsertSavedGame: appends new games and replaces by id in place
 const appended = upsertSavedGame([], scored.game, { updatedAt: savedAt });
@@ -232,6 +252,7 @@ const logged = applyScoreChange({ game: scored.game, playerId: game.players[1].i
 saveGames({ games: upsertSavedGame([], logged.game, { updatedAt: savedAt }), storage: resumeStorage });
 const reloaded = loadSavedGames({ storage: resumeStorage });
 assert.equal(reloaded.error, null);
+assert.equal(reloaded.droppedCount, 0);
 assert.deepEqual(reloaded.games[0].players.map((player) => player.total), [10, -3]);
 assert.deepEqual(
   reloaded.games[0].changes.map((change) => change.amount),
@@ -241,4 +262,4 @@ assert.deepEqual(
 assert.deepEqual(Object.keys(reloaded.games[0].changes[0]).sort(), ["amount", "id", "playerId"]);
 assert.equal(reloaded.games[0].status, "active");
 
-console.log("Storage tests passed: single versioned key, round-trip save/load, upsert/append/immutability, deterministic ordering, invalid-payload rejection, entry crash guard, unavailable/throwing storage, and write failures.");
+console.log("Storage tests passed: single versioned key, round-trip save/load, upsert/append/immutability, deterministic ordering, invalid-payload rejection, entry crash guard with droppedCount reporting, unavailable/throwing storage, and write failures.");
