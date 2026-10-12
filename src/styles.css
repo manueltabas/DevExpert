@@ -826,6 +826,69 @@ h3 {
   font-weight: 800;
 }
 
+.finished-note {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  color: var(--text);
+  background: var(--surface-strong);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.finish-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.finish-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  color: #9f271e;
+  background: var(--surface-strong);
+  border: 1px solid rgba(159, 39, 30, 0.45);
+  border-radius: 999px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.finish-prompt {
+  padding: 14px 16px;
+  background: var(--surface-strong);
+  border: 1px solid rgba(159, 39, 30, 0.38);
+  border-radius: 12px;
+}
+
+.finish-prompt-title {
+  margin: 0;
+  color: var(--text);
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.finish-prompt-warning {
+  margin: 8px 0 0;
+  color: #9f271e;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.finish-prompt-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.active-player.is-final {
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+}
+
 @media (max-width: 720px) {
   .app-shell {
     padding: 16px;
@@ -894,6 +957,11 @@ h3 {
       "rank token name total"
       "select select select select";
     row-gap: 10px;
+  }
+
+  .active-player.is-final {
+    grid-template-areas:
+      "rank token name total";
   }
 
   .active-player-rank {

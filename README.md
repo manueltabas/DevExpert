@@ -31,14 +31,16 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, and storage-failure flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, and finish-game flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
 - `npm run test:browser:undo`: run only the Chrome undo interaction checks.
 - `npm run test:browser:resume`: run only the Chrome save/resume interaction checks.
 - `npm run test:browser:storage-failure`: run only the Chrome storage-failure feedback checks.
+- `npm run test:browser:finish-game`: run only the Chrome finish/read-only standings checks.
 - `npm run test:standings`: run only the ranking unit checks.
+- `npm run test:game`: run only the game-lifecycle (finishGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
@@ -58,15 +60,29 @@ through the history one change at a time; undoing with an empty history
 announces "Nothing to undo yet." without changing anything. Names and
 colors can repeat; numbered markers distinguish players.
 
-Every successful game mutation — starting a game, saving points, and a
-successful undo — is saved to this browser's local storage, so reloading the
-page never loses a game in progress. The home screen's **Unfinished games**
-panel lists each saved game with its title, player count, player names and
-color markers, and an "Updated" timestamp, most recently updated first; each
-card's **Resume** control reopens the game with its roster, totals, and change
-log intact, so undo works immediately after resuming and undone changes never
-reappear after a reload. Games are saved only in this browser — clearing site
-data removes them. Ranks stay render-time only and are never stored.
+Every successful game mutation — starting a game, saving points, a
+successful undo, and confirming **Finish game** — is saved to this browser's
+local storage, so reloading the page never loses a game in progress. The home
+screen's **Unfinished games** panel lists each saved game with its title,
+player count, player names and color markers, and an "Updated" timestamp,
+most recently updated first; each card's **Resume** control reopens the game
+with its roster, totals, and change log intact, so undo works immediately
+after resuming and undone changes never reappear after a reload. Games are
+saved only in this browser — clearing site data removes them. Ranks stay
+render-time only and are never stored.
+
+Ending a game is deliberate and irreversible. The score-entry panel's
+**Finish game** action opens an inline confirmation — "Finish this game?"
+with the warning "Finished games can't be reopened for scoring. Final
+standings stay saved in this browser." — where **Cancel** returns to scoring
+with everything unchanged. Confirming locks the game: the leaderboard becomes
+read-only final standings under a "Finished" badge with every player's final
+rank and total, and all score controls (Add points, the score-entry panel,
+Save points, Undo last score) disappear; a status line reads "Final standings
+— this game is finished and can't be scored." Finished games move to the
+home screen's **Finished games** panel, whose **View results** controls
+reopen the same read-only standings — unchanged after any reload — while
+unfinished games keep their Resume controls.
 
 Storage problems are never silent. When a save fails (blocked or full
 storage), when the stored data is unreadable or incompatible, or when
@@ -82,5 +98,5 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `handle-storage-failure` is
-accepted and merged, the next feature is `finish-game`.
+Run `$feature-flow` one feature at a time. After `finish-game` is accepted
+and merged, the next feature is `celebrate-podium`.

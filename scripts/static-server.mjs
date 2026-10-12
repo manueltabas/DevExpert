@@ -15,6 +15,7 @@ const MIME_TYPES = {
 
 const DEFAULT_PUBLIC_FILES = new Set([
   "index.html",
+  "src/game.js",
   "src/main.js",
   "src/roster.js",
   "src/score.js",
