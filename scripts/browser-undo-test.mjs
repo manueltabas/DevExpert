@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createStaticServer, listen } from "./static-server.mjs";
+import { STORAGE_KEY } from "../src/storage.js";
 import {
   CdpClient,
   click,
@@ -11,6 +12,7 @@ import {
   fill,
   launchChrome,
   navigate,
+  readSavedGamesState,
   screenshot,
   setViewport,
   waitForSelector
@@ -119,6 +121,12 @@ async function runLatestRecipientScenario(cdp, url) {
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Undo test", ["Alex", "Sam"]);
 
+  const savedAfterStart = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterStart.keyCount, 1);
+  assert.equal(savedAfterStart.keyName, STORAGE_KEY);
+  assert.equal(savedAfterStart.payloadVersion, 1);
+  assert.equal(savedAfterStart.gameCount, 1, "starting the game saved its snapshot");
+
   const labels = await evaluate(cdp, () => {
     const saveButton = document.querySelector("[data-score-form] button[type='submit']");
     const undoButton = document.querySelector("[data-action='undo-last-score']");
@@ -162,8 +170,11 @@ async function runLatestRecipientScenario(cdp, url) {
   assert.equal(state.focusedAction, "undo-last-score", "focus must move to the undo button after a successful undo");
   assert.equal(state.focusedId, "", "the undo button is not an id-target");
   assert.equal(state.inputValue, "", "the re-render clears the amount input");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "the successful undo persists the shortened log under the single key");
   assert.equal(state.horizontalOverflow, false);
+
+  const savedAfterUndo = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterUndo.gameCount, 1, "undo updates the same saved snapshot instead of adding one");
 
   // The log had one entry left, so the next undo reverses Alex's +10.
   await clickUndo(cdp);
@@ -182,6 +193,10 @@ async function runNoChangeScenario(cdp, url) {
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Empty log test", ["Alex", "Sam"]);
 
+  const savedAfterSecondGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterSecondGame.gameCount, 2, "the second game is a second saved snapshot");
+  const rawBeforeNoOp = savedAfterSecondGame.raw;
+
   // Scenario 2: undo on a fresh game is an announced, non-error no-op.
   await evaluate(cdp, () => {
     document.querySelector(".active-player")?.setAttribute("data-sentinel", "kept");
@@ -197,7 +212,11 @@ async function runNoChangeScenario(cdp, url) {
   assert.equal(state.focusedId, "score-amount", "the no-op must not move focus");
   assert.deepEqual(state.totals, ["0", "0"]);
   assert.deepEqual(state.ranks, ["1", "1"]);
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1);
+  assert.equal(state.horizontalOverflow, false);
+
+  const rawAfterNoOp = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
+  assert.equal(rawAfterNoOp, rawBeforeNoOp, "the nothing-to-undo no-op must never write storage");
 
   const infoStyle = await readInfoStyle(cdp);
   assert.equal(infoStyle.text, "Nothing to undo yet.");
@@ -217,6 +236,9 @@ async function runNegativeChangeScenario(cdp, url) {
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Negative undo test", ["Alex", "Sam"]);
 
+  const savedAfterThirdGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterThirdGame.gameCount, 3, "the third game is a third saved snapshot");
+
   // Scenario 3: undo after a negative change.
   await savePoints(cdp, "-3");
   let state = await readUndoState(cdp);
@@ -230,7 +252,7 @@ async function runNegativeChangeScenario(cdp, url) {
   assert.deepEqual(state.ranks, ["1", "1"]);
   assert.match(state.feedback, /Undid -3 points for Alex\. New total: 0\. Rank: 1\./, "the raw signed amount is announced");
   assert.equal(state.focusedAction, "undo-last-score");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "the negative-change undo persists under the single key");
   assert.equal(state.horizontalOverflow, false);
   return true;
 }
@@ -240,6 +262,9 @@ async function runWalkBackScenario(cdp, url) {
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Walk-back test", ["Alex", "Sam", "Jamie"]);
+
+  const savedAfterFourthGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterFourthGame.gameCount, 4, "the fourth game is a fourth saved snapshot");
 
   // Scenario 4: +10 Alex, +12 Sam, +8 Jamie applied in that order.
   await savePoints(cdp, "10");
@@ -290,8 +315,11 @@ async function runWalkBackScenario(cdp, url) {
   assert.equal(state.feedback, "Nothing to undo yet.");
   assert.deepEqual(state.totals, ["0", "0", "0"]);
   assert.equal(state.focusedAction, "undo-last-score", "the no-op must not move focus from the undo button");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1);
   assert.equal(state.horizontalOverflow, false);
+
+  const savedAfterDrain = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterDrain.gameCount, 4, "draining the log through no-op undos must not grow the saved list");
 
   const sentinel = await evaluate(cdp, () => document.querySelector(".active-player")?.dataset.sentinel ?? null);
   assert.equal(sentinel, "kept", "the drained-log no-op must not re-render the view");
@@ -303,6 +331,9 @@ async function runOvertakeScenario(cdp, url) {
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Overtake undo test", ["Alex", "Sam"]);
+
+  const savedAfterFifthGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterFifthGame.gameCount, 5, "the fifth game is a fifth saved snapshot");
 
   await savePoints(cdp, "7");
   await clickPlayerRow(cdp, "active-game-player-2");
@@ -329,7 +360,7 @@ async function runOvertakeScenario(cdp, url) {
   assert.equal(state.selectedRowName, "Sam");
   assert.match(state.feedback, /Undid 5 points for Sam\. New total: 5\. Rank: 2\./);
   assert.equal(state.focusedAction, "undo-last-score");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "the revert persists under the single key");
   assert.equal(state.horizontalOverflow, false);
   return true;
 }
@@ -340,6 +371,9 @@ async function runMobileScenario(cdp, url) {
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
   await createUndoGame(cdp, "Mobile undo test", ["Alex", "Sam"]);
+
+  const savedAfterSixthGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterSixthGame.gameCount, 6, "the sixth game is a sixth saved snapshot");
 
   await savePoints(cdp, "10");
 
@@ -390,7 +424,7 @@ async function runMobileScenario(cdp, url) {
   assert.equal(state.errorPresent, false);
   assert.equal(state.feedback, "Nothing to undo yet.");
   assert.equal(state.focusedAction, "undo-last-score");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1);
   assert.equal(state.horizontalOverflow, false);
   return screenshot(cdp, path.join(evidenceDir, "mobile-undo-320px.png"));
 }
@@ -425,7 +459,7 @@ async function main() {
 
     assert.deepEqual(consoleProblems, [], "browser console should not report errors");
 
-    console.log("Browser undo test passed: only the latest recipient is restored, the empty-log no-op announces info without re-render, negative changes undo with signed amounts, three keyboard undos walk back and then stop safely, an overtaken leaderboard reverts order and ranks, and the 320px panel keeps a >=44px keyboard-operable undo button with visible focus; no persistence and no console errors.");
+    console.log("Browser undo test passed: only the latest recipient is restored, the empty-log no-op announces info without re-render or storage writes, negative changes undo with signed amounts, three keyboard undos walk back and then stop safely, an overtaken leaderboard reverts order and ranks, and the 320px panel keeps a >=44px keyboard-operable undo button with visible focus; single-key persistence across six games and no console errors.");
     console.log(`Browser evidence screenshots: ${desktopUndoScreenshot}, ${mobileUndoScreenshot}`);
   } finally {
     if (chrome) {

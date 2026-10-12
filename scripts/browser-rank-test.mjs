@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createStaticServer, listen } from "./static-server.mjs";
+import { STORAGE_KEY } from "../src/storage.js";
 import {
   CdpClient,
   click,
@@ -11,6 +12,7 @@ import {
   fill,
   launchChrome,
   navigate,
+  readSavedGamesState,
   screenshot,
   setViewport,
   waitForSelector
@@ -76,6 +78,12 @@ async function runTieScenario(cdp, url) {
   await waitForSelector(cdp, "[data-action='new-game']");
   await createRankedGame(cdp, "Rank test", ["Alex", "Sam", "Jamie"]);
 
+  const savedAfterStart = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterStart.keyCount, 1);
+  assert.equal(savedAfterStart.keyName, STORAGE_KEY);
+  assert.equal(savedAfterStart.payloadVersion, 1);
+  assert.equal(savedAfterStart.gameCount, 1, "starting the game saved its snapshot");
+
   // Fresh game: every total is 0, so every row shares rank 1 in creation order.
   const initial = await readRankState(cdp);
   assert.deepEqual(initial.names, ["Alex", "Sam", "Jamie"]);
@@ -140,8 +148,11 @@ async function runTieScenario(cdp, url) {
   const sentinel = await evaluate(cdp, () => document.querySelector(".active-player")?.dataset.sentinel ?? null);
   assert.equal(sentinel, "kept", "an error entry must not re-render the roster");
   assert.equal(state.focusedId, "score-amount");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "rejected entries must not add storage writes");
   assert.equal(state.horizontalOverflow, false);
+
+  const savedAfterError = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterError.gameCount, 1, "a failed validation must not save or grow the saved list");
 
   return screenshot(cdp, path.join(evidenceDir, "desktop-rank-ties.png"));
 }
@@ -151,6 +162,9 @@ async function runReorderScenario(cdp, url) {
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
   await createRankedGame(cdp, "Focus test", ["Alex", "Sam"]);
+
+  const savedAfterSecondGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterSecondGame.gameCount, 2, "the second game is a second saved snapshot");
 
   await savePoints(cdp, "7");
   let state = await readRankState(cdp);
@@ -182,7 +196,7 @@ async function runReorderScenario(cdp, url) {
   assert.match(state.feedback, /Added 5 points to Sam\. New total: 10\. Rank: 1\./);
   assert.equal(state.focusedId, "score-amount", "focus must return to the amount input after the reorder");
   assert.equal(state.inputValue, "", "the input must be cleared after a successful save");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "storage stays a single key as games accumulate");
   assert.equal(state.horizontalOverflow, false);
 
   return screenshot(cdp, path.join(evidenceDir, "desktop-rank-reorder.png"));
@@ -193,6 +207,9 @@ async function runNegativeScenario(cdp, url) {
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
   await createRankedGame(cdp, "Negative test", ["Alex", "Sam", "Jamie"]);
+
+  const savedAfterThirdGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterThirdGame.gameCount, 3, "the third game is a third saved snapshot");
 
   // Scenario 2: 5, -3, -3 -> ranks 1, 2, 2 with negative totals rendered.
   await savePoints(cdp, "5");
@@ -216,7 +233,7 @@ async function runNegativeScenario(cdp, url) {
   assert.deepEqual(state.ranks, ["1", "2", "2"]);
   assert.equal(state.errorPresent, false);
   assert.equal(state.focusedId, "score-amount");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "storage stays a single key through saves and undos");
   assert.equal(state.horizontalOverflow, false);
   return true;
 }
@@ -254,6 +271,9 @@ async function runTwentyPlayerScenario(cdp, url) {
   await click(cdp, "button[type='submit']");
   await waitForSelector(cdp, "#score-amount");
 
+  const savedAfterFourthGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterFourthGame.gameCount, 4, "the fourth game is a fourth saved snapshot");
+
   // Score five players so ranks mix ties, positives, zero, and a negative.
   const scores = [
     { playerId: "active-game-player-1", amount: "21" },
@@ -281,7 +301,7 @@ async function runTwentyPlayerScenario(cdp, url) {
   assert.deepEqual(state.totals, expectedTotals);
   assert.deepEqual(state.ranks, expectedRanks, "ties share rank 1 and the fifteen zero-total players share rank 5");
   assert.equal(state.ranks.length, 20, "every row must show a rank numeral");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "storage stays a single key with four saved games");
   assert.equal(state.horizontalOverflow, false, "a scored 20-player leaderboard must not overflow at 320px");
 
   const layout = await evaluate(cdp, () => {
@@ -335,7 +355,7 @@ async function runTwentyPlayerScenario(cdp, url) {
   assert.equal(state.pressedStates[0], "true", "the selected row must stay pressed after the reorder");
   assert.equal(state.focusedId, "score-amount", "focus must stay in the input after a re-ranking save");
   assert.equal(state.inputValue, "");
-  assert.equal(state.localStorageLength, 0);
+  assert.equal(state.localStorageLength, 1, "the re-ranking save keeps storage at one key");
   assert.equal(state.horizontalOverflow, false);
   return screenshot(cdp, path.join(evidenceDir, "mobile-20-player-leaderboard.png"));
 }
@@ -368,7 +388,7 @@ async function main() {
 
     assert.deepEqual(consoleProblems, [], "browser console should not report errors");
 
-    console.log("Browser rank test passed: 12/12/8 -> ranks 1,1,3 with stable tied order, negative totals 5/-3/-3 -> 1,2,2, all-tied fresh game at rank 1, save-driven reorder with retained focus and selection, error repaint without re-render, 320px 20-player readability with no overflow, and no persistence or console errors.");
+    console.log("Browser rank test passed: 12/12/8 -> ranks 1,1,3 with stable tied order, negative totals 5/-3/-3 -> 1,2,2, all-tied fresh game at rank 1, save-driven reorder with retained focus and selection, error repaint without re-render or save, 320px 20-player readability with no overflow, and single-key persistence with no console errors.");
     console.log(`Browser evidence screenshots: ${desktopTiesScreenshot}, ${desktopReorderScreenshot}, ${mobileScreenshot}`);
   } finally {
     if (chrome) {

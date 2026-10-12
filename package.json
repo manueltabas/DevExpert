@@ -5,14 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo",
+    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:storage && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo && npm run test:browser:resume",
     "test:browser": "node scripts/browser-roster-test.mjs",
     "test:browser:rank": "node scripts/browser-rank-test.mjs",
+    "test:browser:resume": "node scripts/browser-resume-test.mjs",
     "test:browser:score": "node scripts/browser-score-test.mjs",
     "test:browser:undo": "node scripts/browser-undo-test.mjs",
     "test:roster": "node scripts/roster-test.mjs",
     "test:score": "node scripts/score-test.mjs",
     "test:smoke": "node scripts/smoke.mjs",
-    "test:standings": "node scripts/standings-test.mjs"
+    "test:standings": "node scripts/standings-test.mjs",
+    "test:storage": "node scripts/storage-test.mjs"
   }
 }

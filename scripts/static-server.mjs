@@ -19,6 +19,7 @@ const DEFAULT_PUBLIC_FILES = new Set([
   "src/roster.js",
   "src/score.js",
   "src/standings.js",
+  "src/storage.js",
   "src/styles.css"
 ]);
 

@@ -2,17 +2,108 @@
 
 ## Current verified state
 
-- Phase: `undo-latest-score` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `resume-saved-game` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score (with undo) units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, and undo).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, and save/resume).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `undo-latest-score` PR; then plan `resume-saved-game` from updated `main`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, and `undo-latest-score` are `accepted`; remaining slices are `not_started`.
+- Next step: merge the `resume-saved-game` PR; then plan `handle-storage-failure` from updated `main`.
+- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, `rank-leaderboard`, `undo-latest-score`, and `resume-saved-game` are `accepted`; remaining slices are `not_started`.
 - Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Save and resume implementation (resume-saved-game)
+
+- Added `src/storage.js`: single versioned key `scorekeeper:games` holding
+  `{ version: 1, games: [...] }`. `loadSavedGames({ storage })` guards
+  missing/throwing storage (`unavailable`), `JSON.parse`s and validates the
+  envelope plus a per-entry crash guard (string `id`, array `players`;
+  unusable entries dropped with a code-only warning) returning
+  `{ games, error: null | "unavailable" | "invalid" }` — it never throws and
+  never rewrites the payload. `saveGames({ games, storage })` stringifies the
+  envelope inside try/catch and returns `{ saved, error: null | "unavailable"
+  | "write" }`. `upsertSavedGame(games, game, { updatedAt })` returns a new
+  array replacing by id or appending, stamping `updatedAt` only on the stored
+  copy; `orderSavedGamesForDisplay(games)` returns a sorted copy
+  (updatedAt desc → createdAt desc → id asc). Storage backend is injectable;
+  the default probes `globalThis.localStorage`.
+- Extended `src/main.js`: `state.savedGames` loaded once at startup before the
+  first render (load failures log `console.warn("Saved game load failed:",
+  code)`); one `persistActiveGameSnapshot()` helper upserts the active game
+  with a fresh `updatedAt`, writes through `saveGames`, and on failure logs
+  `console.warn("Game save failed:", error)` with no names/scores. It is
+  called exactly in the three success paths: setup submit after
+  `state.activeGame = game`, `handleScoreSubmit` after
+  `state.activeGame = result.game`, and `handleUndo` after the same. Failed
+  validations, selection changes, feedback repaints, and the nothing-to-undo
+  no-op never save. `renderHome` now builds the "Unfinished games" panel from
+  `orderSavedGamesForDisplay(state.savedGames)` filtered to `status:
+  "active"`: each card shows the title, "{N} players", an "Updated {date}"
+  label, roster-order names, one `marker-*` color chip per player, and a
+  `Resume` button with `aria-label="Resume {title}"`; the retention line
+  "Saved only in this browser — clearing site data removes these games." is
+  always present; the empty state and finished-games panel keep their roles.
+  `handleResume(gameId)` restores the saved game verbatim as
+  `state.activeGame`, selects the first player, clears feedback, renders, and
+  focuses `[data-active-heading]` — so undo works immediately after resume
+  and its success persists the shortened log.
+- Styled `src/styles.css`: `.saved-game-list`/`.saved-game` cards within the
+  panel rhythm (info block + right-aligned ≥44px `.resume-action`), marker
+  strip, and muted `.retention-note`; ≤480px cards stack single-column with a
+  full-width resume control.
+- Added `scripts/storage-test.mjs` (in-memory storage stubs; round-trip,
+  upsert/append/replace/immutability, ordering ties, invalid payloads,
+  entry crash guard with name-free warnings, unavailable/throwing storage,
+  write failures) and `scripts/browser-resume-test.mjs` (Scenarios 1–6 plus a
+  separate Chrome session where `Page.addScriptToEvaluateOnNewDocument`
+  patches `Storage.prototype.setItem` to throw). Added the shared
+  `readSavedGamesState(cdp, storageKey)` helper (key count/name, payload
+  version, game count, saved ids, raw payload) to
+  `scripts/browser-test-utils.mjs` and updated the four existing browser
+  suites' `localStorage.length === 0` assertions honestly: 0 keys before any
+  game exists, exactly 1 key `scorekeeper:games` after the first save,
+  gameCount growing only on successful mutations, and byte-identical raw
+  payloads proving failed validations and no-op undos never write.
+- Wired `test:storage` and `test:browser:resume` into `package.json`'s `test`
+  chain; added `src/storage.js` to the `scripts/static-server.mjs` allowlist
+  and `scripts/smoke.mjs` asset check; added `src/storage.js` to the
+  required-file list and the three new files to the `node --check` list in
+  `init.sh`.
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:storage` passed; `npm run test:browser:resume` passed on real
+  headless Chrome covering Scenarios 1–6 (two games created+scored, reload,
+  resume each with correct independent totals, card content/ordering with
+  title-bearing Resume names, undo-after-resume plus a second reload proving
+  no resurrection, 320px stacking/keyboard/retention checks, and the
+  blocked-storage session where saves fail with code-only warnings, no
+  console errors, and nothing written); `npm run test` passed end to end with
+  all five browser suites chained; `./init.sh` and `CI=true ./init.sh` passed
+  and exited without starting a server; `npm run dev` probe returned 200 for
+  `/`, `/src/storage.js`, and `/src/main.js` and 404 for `/AGENTS.md`.
+  Screenshots: `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-resume-saved-game/desktop-home-saved-games.png`,
+  `desktop-resumed-friday.png`, and `mobile-home-saved-games-320px.png`
+  (generated but not visually openable this session; readability asserted
+  programmatically).
+- Fixed during self-verification: the resume suite initially expected
+  resumed rows in roster order with wrong ranks — rows render in descending
+  total order (Taylor/Sam/Jamie with tied zeros sharing ranks 1,1,3), so the
+  assertions were corrected to the ranked order; a console-warning listener
+  initially read `event.params?.args` where the shared CDP client dispatches
+  params directly (`event.args`), so blocked-storage warnings were not
+  captured until fixed.
+- Updated README, ARCHITECTURE.md (storage module and persistence boundary
+  replacing "reloading clears everything"), CONSTRAINTS.md (durable
+  persistence and never-throwing storage rules), and feature evidence.
+- Next: run independent `$feature-validator` for `resume-saved-game`; after
+  acceptance, commit `feat: complete resume-saved-game`, push the branch, and
+  open the PR.
+- Independent validator verdict: `accept`. Reran both gate modes, storage and
+  resume suites, HTTP boundary probes, and an independent browser probe with
+  hostile XSS payloads (persisted verbatim, rendered escaped, zero injected
+  elements) plus byte-level payload checks (exact envelope shape, no rank
+  fields); no security findings.
 
 ### 2026-10-12 — Latest-change undo implementation (undo-latest-score)
 

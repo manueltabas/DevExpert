@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createStaticServer, listen } from "./static-server.mjs";
+import { STORAGE_KEY } from "../src/storage.js";
 import {
   CdpClient,
   click,
@@ -11,6 +12,7 @@ import {
   fill,
   launchChrome,
   navigate,
+  readSavedGamesState,
   screenshot,
   setViewport,
   waitForSelector
@@ -61,8 +63,14 @@ async function runDesktopScenario(cdp, url) {
   assert.equal(initial.selectedRowName, "Alex", "the first player should be selected by default");
   assert.deepEqual(initial.pressedStates, ["true", "false"]);
   assert.deepEqual(initial.totals, ["0", "0"]);
-  assert.equal(initial.localStorageLength, 0);
+  assert.equal(initial.localStorageLength, 1, "starting the game saved one storage key");
   assert.equal(initial.horizontalOverflow, false);
+
+  const savedAfterStart = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterStart.keyCount, 1);
+  assert.equal(savedAfterStart.keyName, STORAGE_KEY);
+  assert.equal(savedAfterStart.payloadVersion, 1);
+  assert.equal(savedAfterStart.gameCount, 1);
 
   const labels = await evaluate(cdp, () => ({
     panelTitle: document.querySelector("#score-panel-title")?.textContent?.trim(),
@@ -140,9 +148,12 @@ async function runDesktopScenario(cdp, url) {
     assert.equal(after.successPresent, false);
     assert.deepEqual(after.totals, ["1005", "7"], `totals must not change for input ${JSON.stringify(testCase.value)}`);
     assert.equal(after.focusedId, "score-amount", "focus should stay in the input after a rejected entry");
-    assert.equal(after.localStorageLength, 0);
+    assert.equal(after.localStorageLength, 1, "rejected entries must not add storage writes");
     assert.equal(after.horizontalOverflow, false);
   }
+
+  const savedAfterRejections = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterRejections.gameCount, 1, "failed validations must not save or grow the saved list");
 
   // Scenario 5: negative totals are valid.
   await savePoints(cdp, "-1010");
@@ -162,7 +173,7 @@ async function runDesktopScenario(cdp, url) {
   assert.notEqual(focusStyle.outlineWidth, "0px");
 
   const finalState = await readScoreState(cdp);
-  assert.equal(finalState.localStorageLength, 0);
+  assert.equal(finalState.localStorageLength, 1, "storage remains a single key after all saves");
   assert.equal(finalState.horizontalOverflow, false);
   return screenshot(cdp, path.join(evidenceDir, "desktop-score-entry.png"));
 }
@@ -236,7 +247,7 @@ async function runMobileScenario(cdp, url) {
   assert.equal(after.errorPresent, false);
   assert.match(after.feedback, /Added -3 points to Sam\. New total: -3\./);
   assert.equal(after.focusedId, "score-amount");
-  assert.equal(after.localStorageLength, 0);
+  assert.equal(after.localStorageLength, 1, "the mobile save keeps storage at one key");
   assert.equal(after.horizontalOverflow, false);
   return screenshot(cdp, path.join(evidenceDir, "mobile-score-entry.png"));
 }
@@ -267,7 +278,7 @@ async function main() {
 
     assert.deepEqual(consoleProblems, [], "browser console should not report errors");
 
-    console.log("Browser score test passed: +10/-3 -> 7 with others at 0, rejected decimal/non-number/empty/out-of-range/zero entries, negative totals, semantic 1e3 parsing, 320px stacked panel with keyboard entry, no persistence, no overflow, and no console errors.");
+    console.log("Browser score test passed: +10/-3 -> 7 with others at 0, rejected decimal/non-number/empty/out-of-range/zero entries without saving, negative totals, semantic 1e3 parsing, 320px stacked panel with keyboard entry, single-key persistence (1 key after the game start, unchanged by rejected entries), no overflow, and no console errors.");
     console.log(`Browser evidence screenshots: ${desktopScreenshot}, ${mobileScreenshot}`);
   } finally {
     if (chrome) {

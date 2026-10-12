@@ -403,6 +403,77 @@ h3 {
   font-weight: 800;
 }
 
+.saved-game-list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.saved-game {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  background: rgba(250, 245, 235, 0.72);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+
+.saved-game-info {
+  min-width: 0;
+}
+
+.saved-game-title {
+  margin: 0;
+  font-weight: 900;
+  font-size: 1.08rem;
+  overflow-wrap: anywhere;
+}
+
+.saved-game-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  font-weight: 800;
+}
+
+.saved-game-updated {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.saved-game-names {
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.saved-game-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.saved-game-markers .marker {
+  width: 18px;
+  height: 18px;
+}
+
+.resume-action {
+  justify-self: end;
+}
+
+.retention-note {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  overflow-wrap: anywhere;
+}
+
 .site-footer {
   display: flex;
   flex-wrap: wrap;
@@ -786,6 +857,15 @@ h3 {
 }
 
 @media (max-width: 480px) {
+  .saved-game {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .resume-action {
+    justify-self: stretch;
+    width: 100%;
+  }
+
   .active-player {
     grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-areas:
