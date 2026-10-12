@@ -23,3 +23,9 @@
   non-numbers, and out-of-range amounts are rejected without changing totals.
   Totals may be negative, and each applied change appends
   `{ id, playerId, amount }` to the in-memory `game.changes` log.
+- Leaderboard ranks are competition ranks derived at render time from player
+  totals: `rank = 1 +` the number of strictly higher totals, so equal totals
+  share a rank and the next position skips (12, 12, 8 → 1, 1, 3). Tied players
+  keep creation order via `player.order` (falling back to the original array
+  index). Never store rank fields on players or games, never write ranking to
+  the change log, and never persist ranks.

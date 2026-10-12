@@ -626,13 +626,22 @@ h3 {
 
 .active-player {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
   gap: 12px;
   align-items: center;
   padding: 12px;
   background: rgba(250, 245, 235, 0.72);
   border: 1px solid var(--border);
   border-radius: 12px;
+}
+
+.active-player-rank {
+  min-width: 2ch;
+  color: var(--text);
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  text-align: right;
 }
 
 .active-player.is-selected {
@@ -772,11 +781,15 @@ h3 {
 
 @media (max-width: 480px) {
   .active-player {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     grid-template-areas:
-      "token name total"
-      "select select select";
+      "rank token name total"
+      "select select select select";
     row-gap: 10px;
+  }
+
+  .active-player-rank {
+    grid-area: rank;
   }
 
   .active-player .player-token {
@@ -824,8 +837,14 @@ h3 {
   }
 
   .active-player {
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    gap: 8px;
     padding: 10px;
+  }
+
+  .active-player-rank {
+    min-width: 1.5ch;
+    font-size: 1.35rem;
   }
 
   .active-player-total {

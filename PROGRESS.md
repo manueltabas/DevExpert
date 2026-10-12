@@ -2,17 +2,76 @@
 
 ## Current verified state
 
-- Phase: `add-player-score` independently accepted (`accepted`); PR handoff for review is next.
+- Phase: `rank-leaderboard` independently accepted (`accepted`); PR handoff for review is next.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
-- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster unit, score unit, HTTP smoke, and Chrome browser checks (roster and scoring).
+- Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score units, HTTP smoke, and Chrome browser checks (roster, scoring, and ranking).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next feature after acceptance, PR, and merge: `rank-leaderboard`.
-- Features: `bootstrap-web-shell`, `create-game-roster`, and `add-player-score` are `accepted`; remaining slices are `not_started`.
-- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory; local HTTP and Chrome ran without restriction this session.
+- Next step: merge the `rank-leaderboard` PR; then plan `undo-latest-score` from updated `main`.
+- Features: `bootstrap-web-shell`, `create-game-roster`, `add-player-score`, and `rank-leaderboard` are `accepted`; remaining slices are `not_started`.
+- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
 - Last verification: 2026-10-12.
 
 ## Session log
+
+### 2026-10-12 — Leaderboard ranking implementation (rank-leaderboard)
+
+- Added `src/standings.js`: pure `rankPlayers(game)` returning `[{ player, rank }]`.
+  It copies and decorates the players array with a `player.order` tiebreak
+  (falling back to the original array index), sorts by total descending, and
+  walks positions assigning `position + 1` while reusing the previous rank on
+  equal totals — competition ranking (12, 12, 8 → 1, 1, 3). `rankPlayers(null)`
+  and missing/empty player lists return `[]`; the input game is never mutated
+  and no rank is stored anywhere.
+- Extended `src/main.js`: `renderActiveGame` maps ranked rows instead of
+  `game.players`; `renderActivePlayer` prepends a plain-text
+  `.active-player-rank` numeral and labels totals `"{name}: rank {rank}, total
+  {total}"`; roster panel copy is now "Leaderboard" / "Highest total leads;
+  ties share rank."; successful saves append `Rank: {rank}` to the existing
+  sentence ("Added {amount} points to {name}. New total: {total}. Rank: {rank}.")
+  computed from `rankPlayers(result.game)`. Full re-render plus explicit
+  `#score-amount` refocus is unchanged; errors still repaint without re-render.
+- Styled `src/styles.css`: `.active-player` is now a five-column grid (rank,
+  token, name, total, button) with `.active-player-rank` fixed-width,
+  `tabular-nums`, bold, right-aligned like totals; ≤480px areas gained `rank`
+  (`"rank token name total"` / `"select select select select"`); ≤360px keeps
+  all five elements visible with 8px gaps and compacted numerals.
+- Added `scripts/standings-test.mjs` and `scripts/browser-rank-test.mjs`; wired
+  `test:standings` and `test:browser:rank` into `package.json` and the `test`
+  chain; updated `scripts/browser-score-test.mjs` DOM-order totals to
+  `["1005", "7"]` at the two ranked-order assertions (Sam 1005 now sorts before
+  Alex 7); added `src/standings.js` to the `scripts/static-server.mjs`
+  allowlist and `scripts/smoke.mjs` asset check; added the three new files to
+  `init.sh` required-file and `node --check` lists.
+- Verification: `node --check` on all sources and test scripts passed;
+  `npm run test:standings` passed (including rank = 1 + strictly-higher count
+  asserted per row on a 20-player mixed game and an applyScoreChange overtake);
+  `npm run test` passed end to end; `./init.sh` and `CI=true ./init.sh` passed;
+  `npm run dev` probe returned 200 for `/` and `/src/standings.js`, 404 for
+  `/AGENTS.md`. Browser scenarios covered 12/12/8 → 1,1,3 with stable creation-
+  order ties, 5/−3/−3 → 1,2,2, all-zero fresh game at rank 1, save-driven
+  reorder with `aria-pressed` following the player and focus returning to
+  `#score-amount`, error repaint without re-render (DOM sentinel survived),
+  320px 20-player leaderboard with no overflow, ≥44px targets, visible focus,
+  keyboard row activation, and a re-ranking save that kept focus; no
+  localStorage writes and no console errors. Screenshots:
+  `/var/folders/24/yg25x7ld6mv2yb2xdznvmh680000gn/T/devexpert-rank-leaderboard/desktop-rank-ties.png`,
+  `desktop-rank-reorder.png`, and `mobile-20-player-leaderboard.png` (generated
+  but not visually openable in this sandbox session; readability asserted
+  programmatically instead).
+- Fixed during self-verification: initial `rankPlayers` reused a rank field
+  from the pre-decorated sort array and returned `undefined` for tied rows —
+  caught by the unit test and rewritten to track previous rank/total while
+  walking positions.
+- Updated README, ARCHITECTURE.md, CONSTRAINTS.md (durable ranking rule), and
+  feature evidence.
+- Next: run independent `$feature-validator` for `rank-leaderboard`.
+- Independent validator verdict: `accept`. Reran both gate modes, focused
+  standings/browser-rank checks, HTTP boundary probes, and extra edge-case
+  probes (triple tie, order fallbacks, immutability); confirmed render-time-only
+  ranks with no stored fields; no security findings.
+- Next: commit `feat: complete rank-leaderboard`, push the branch, and open the
+  PR for user review.
 
 ### 2026-10-12 — Score entry implementation (add-player-score)
 

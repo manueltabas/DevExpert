@@ -119,7 +119,7 @@ async function runDesktopScenario(cdp, url) {
   // Semantic parsing: number inputs accept exponent notation.
   await savePoints(cdp, "1e3");
   after = await readScoreState(cdp);
-  assert.deepEqual(after.totals, ["7", "1005"]);
+  assert.deepEqual(after.totals, ["1005", "7"], "rows render in descending total order, so Sam 1005 comes first");
   assert.match(after.feedback, /New total: 1005\./);
 
   // Scenario 3-4: invalid entries are rejected without altering totals.
@@ -138,7 +138,7 @@ async function runDesktopScenario(cdp, url) {
     assert.equal(after.errorPresent, true, `expected an error for input ${JSON.stringify(testCase.value)}`);
     assert.match(after.feedback, testCase.pattern);
     assert.equal(after.successPresent, false);
-    assert.deepEqual(after.totals, ["7", "1005"], `totals must not change for input ${JSON.stringify(testCase.value)}`);
+    assert.deepEqual(after.totals, ["1005", "7"], `totals must not change for input ${JSON.stringify(testCase.value)}`);
     assert.equal(after.focusedId, "score-amount", "focus should stay in the input after a rejected entry");
     assert.equal(after.localStorageLength, 0);
     assert.equal(after.horizontalOverflow, false);
