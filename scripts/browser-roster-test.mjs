@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { createStaticServer, listen } from "./static-server.mjs";
+import { STORAGE_KEY } from "../src/storage.js";
 import {
   CdpClient,
   click,
@@ -11,6 +12,7 @@ import {
   fill,
   launchChrome,
   navigate,
+  readSavedGamesState,
   screenshot,
   setViewport,
   waitForSelector
@@ -26,6 +28,10 @@ async function runDesktopScenario(cdp, url) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   await navigate(cdp, url);
   await waitForSelector(cdp, "[data-action='new-game']");
+
+  const freshStorage = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(freshStorage.keyCount, 0, "a fresh profile must start with no saved games");
+
   await click(cdp, "[data-action='new-game']");
   await fill(cdp, "#game-title", "Friday game");
   await fill(cdp, "#player-name-1", "  Alex  ");
@@ -54,8 +60,14 @@ async function runDesktopScenario(cdp, url) {
   assert.deepEqual(result.players.map((player) => player.name), ["Alex", "Alex"]);
   assert.deepEqual(result.players.map((player) => player.total), ["0", "0"]);
   assert.equal(result.uniqueIds, 2);
-  assert.equal(result.localStorageLength, 0);
+  assert.equal(result.localStorageLength, 1, "starting a game persists exactly one storage key");
   assert.equal(result.horizontalOverflow, false);
+
+  const savedAfterStart = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterStart.keyCount, 1);
+  assert.equal(savedAfterStart.keyName, STORAGE_KEY);
+  assert.equal(savedAfterStart.payloadVersion, 1);
+  assert.equal(savedAfterStart.gameCount, 1, "the started game is the first saved snapshot");
 }
 
 async function runMobileScenario(cdp, url) {
@@ -71,6 +83,9 @@ async function runMobileScenario(cdp, url) {
   }));
   assert.match(invalidResult.validationText, /Player 1 needs a name/);
   assert.equal(invalidResult.activeGameCreated, false);
+
+  const afterInvalidSubmit = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(afterInvalidSubmit.gameCount, 1, "a failed roster validation must never save");
 
   for (let index = 0; index < 18; index += 1) {
     await click(cdp, "[data-action='add-player']");
@@ -132,8 +147,11 @@ async function runMobileScenario(cdp, url) {
   assert.equal(activeResult.uniqueIds, 20);
   assert.deepEqual(activeResult.totals, Array(20).fill("0"));
   assert.deepEqual(activeResult.names.slice(0, 2), ["Sam", "Sam"]);
-  assert.equal(activeResult.localStorageLength, 0);
+  assert.equal(activeResult.localStorageLength, 1, "storage stays a single key as games accumulate");
   assert.equal(activeResult.horizontalOverflow, false);
+
+  const savedAfterSecondGame = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(savedAfterSecondGame.gameCount, 2, "the 20-player game is a second saved snapshot");
   return mobileSetupScreenshot;
 }
 
@@ -166,7 +184,7 @@ async function main() {
 
     assert.deepEqual(consoleProblems, [], "browser console should not report errors");
 
-    console.log("Browser roster test passed: desktop valid game, mobile 20-player cap, invalid names, duplicate names/colors, zero totals, no persistence, and no horizontal overflow.");
+    console.log("Browser roster test passed: desktop valid game, mobile 20-player cap, invalid names, duplicate names/colors, zero totals, single-key persistence (0 keys before any game, 1 key per save), and no horizontal overflow.");
     console.log(`Browser evidence screenshots: ${desktopScreenshot}, ${mobileSetupScreenshot}, ${mobileActiveScreenshot}`);
   } finally {
     if (chrome) {

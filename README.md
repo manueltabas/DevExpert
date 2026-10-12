@@ -31,12 +31,14 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, and score unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, and undo flows.
+- `npm run test`: run roster, standings, score, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, and save/resume flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
 - `npm run test:browser:undo`: run only the Chrome undo interaction checks.
+- `npm run test:browser:resume`: run only the Chrome save/resume interaction checks.
 - `npm run test:standings`: run only the ranking unit checks.
+- `npm run test:storage`: run only the storage unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
 - `CI=true ./init.sh`: run the same gate in CI-style mode.
@@ -53,11 +55,19 @@ decimals, and out-of-range amounts are rejected with a clear message. Choose
 total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
 announces "Nothing to undo yet." without changing anything. Names and
-colors can repeat; numbered markers distinguish players. Ranks are derived at
-render time only — the game and its change log stay in memory and disappear on
-reload. Saved history arrives in a later PR.
+colors can repeat; numbered markers distinguish players.
+
+Every successful game mutation — starting a game, saving points, and a
+successful undo — is saved to this browser's local storage, so reloading the
+page never loses a game in progress. The home screen's **Unfinished games**
+panel lists each saved game with its title, player count, player names and
+color markers, and an "Updated" timestamp, most recently updated first; each
+card's **Resume** control reopens the game with its roster, totals, and change
+log intact, so undo works immediately after resuming and undone changes never
+reappear after a reload. Games are saved only in this browser — clearing site
+data removes them. Ranks stay render-time only and are never stored.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. After `undo-latest-score` is
-accepted and merged, the next feature is `resume-saved-game`.
+Run `$feature-flow` one feature at a time. After `resume-saved-game` is
+accepted and merged, the next feature is `handle-storage-failure`.

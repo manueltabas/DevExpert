@@ -217,6 +217,35 @@ export async function evaluate(cdp, pageFunction, argument) {
   return result.result.value;
 }
 
+export async function readSavedGamesState(cdp, storageKey) {
+  return evaluate(cdp, (key) => {
+    const keyNames = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      keyNames.push(localStorage.key(index));
+    }
+
+    const raw = localStorage.getItem(key);
+    let payload = null;
+    let parsed = false;
+
+    try {
+      payload = JSON.parse(raw);
+      parsed = true;
+    } catch {
+      payload = null;
+    }
+
+    return {
+      keyCount: keyNames.length,
+      keyName: keyNames.includes(key) ? key : (keyNames[0] ?? null),
+      payloadVersion: parsed && payload && typeof payload === "object" && !Array.isArray(payload) ? payload.version ?? null : null,
+      gameCount: parsed && Array.isArray(payload?.games) ? payload.games.length : null,
+      savedIds: parsed && Array.isArray(payload?.games) ? payload.games.map((game) => (game && typeof game === "object" ? game.id ?? null : null)) : null,
+      raw
+    };
+  }, storageKey);
+}
+
 export async function screenshot(cdp, filePath) {
   const result = await cdp.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
   await writeFile(filePath, Buffer.from(result.data, "base64"));

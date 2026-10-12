@@ -18,6 +18,12 @@ import {
   undoLastScoreChange
 } from "./score.js";
 import { rankPlayers } from "./standings.js";
+import {
+  loadSavedGames,
+  orderSavedGamesForDisplay,
+  saveGames,
+  upsertSavedGame
+} from "./storage.js";
 
 const appRoot = document.querySelector("[data-app-root]");
 const yearTarget = document.querySelector("[data-current-year]");
@@ -28,6 +34,7 @@ const state = {
   activeGame: null,
   selectedPlayerId: null,
   scoreFeedback: null,
+  savedGames: [],
   errors: [],
   limitMessage: "",
   nextRowNumber: MIN_PLAYERS + 1
@@ -49,6 +56,13 @@ const SCORE_FEEDBACK_CLASS_NAMES = {
   "success": "success-message",
   "info": "info-message"
 };
+
+const initialSavedState = loadSavedGames();
+state.savedGames = initialSavedState.games;
+
+if (initialSavedState.error) {
+  console.warn("Saved game load failed:", initialSavedState.error);
+}
 
 if (yearTarget) {
   yearTarget.textContent = String(new Date().getFullYear());
@@ -76,6 +90,8 @@ function render() {
 }
 
 function renderHome() {
+  const activeGames = orderSavedGamesForDisplay(state.savedGames).filter((game) => game.status === "active");
+
   appRoot.innerHTML = `
     <section class="hero-panel" aria-labelledby="home-title">
       <div class="hero-copy">
@@ -98,10 +114,12 @@ function renderHome() {
             <h2 id="unfinished-title">Unfinished games</h2>
           </div>
         </div>
+        ${activeGames.length > 0 ? renderSavedGameList(activeGames) : `
         <div class="empty-state">
           <p class="empty-title">No saved games yet.</p>
-          <p>Games will appear here once browser history is added.</p>
-        </div>
+          <p>Start a new game and it will be saved here so you can resume it later.</p>
+        </div>`}
+        <p class="retention-note">Saved only in this browser — clearing site data removes these games.</p>
       </article>
 
       <article class="panel" aria-labelledby="finished-title">
@@ -130,6 +148,83 @@ function renderHome() {
     render();
     appRoot.querySelector("#game-title")?.focus();
   });
+
+  appRoot.querySelectorAll("[data-action='resume-game']").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleResume(button.dataset.gameId);
+    });
+  });
+}
+
+function renderSavedGameList(games) {
+  return `
+    <ol class="saved-game-list" aria-label="Saved games">
+      ${games.map((game) => renderSavedGameCard(game)).join("")}
+    </ol>
+  `;
+}
+
+function renderSavedGameCard(game) {
+  const players = Array.isArray(game.players) ? game.players : [];
+  const names = players
+    .map((player) => (player && typeof player.name === "string" ? escapeHtml(player.name) : ""))
+    .filter((name) => name !== "")
+    .join(", ");
+  const markers = players
+    .map((player) => `<span class="marker ${getColor(player?.color).cssClass}" aria-hidden="true"></span>`)
+    .join("");
+  const gameId = escapeAttribute(game.id ?? "");
+
+  return `
+    <li class="saved-game" data-saved-game-id="${gameId}">
+      <div class="saved-game-info">
+        <p class="saved-game-title">${escapeHtml(game.title ?? "Untitled game")}</p>
+        <p class="saved-game-meta">${players.length} players</p>
+        <p class="saved-game-updated">${escapeHtml(formatSavedGameUpdated(game))}</p>
+        ${names ? `<p class="saved-game-names">${names}</p>` : ""}
+        ${markers ? `<div class="saved-game-markers">${markers}</div>` : ""}
+      </div>
+      <button type="button" class="secondary-action resume-action" data-action="resume-game" data-game-id="${gameId}" aria-label="Resume ${escapeAttribute(game.title ?? "this game")}">Resume</button>
+    </li>
+  `;
+}
+
+function formatSavedGameUpdated(game) {
+  for (const candidate of [game?.updatedAt, game?.createdAt]) {
+    if (typeof candidate !== "string" || candidate.trim() === "") {
+      continue;
+    }
+
+    const parsed = new Date(candidate);
+
+    if (Number.isNaN(parsed.getTime())) {
+      continue;
+    }
+
+    return `Updated ${parsed.toLocaleString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit"
+    })}`;
+  }
+
+  return "Updated";
+}
+
+function handleResume(gameId) {
+  const game = state.savedGames.find((candidate) => candidate?.id === gameId) ?? null;
+
+  if (!game || !Array.isArray(game.players) || game.players.length === 0) {
+    return;
+  }
+
+  state.activeGame = game;
+  state.selectedPlayerId = game.players[0]?.id ?? null;
+  state.scoreFeedback = null;
+  state.view = "active";
+  render();
+  appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
 function renderSetup() {
@@ -304,6 +399,7 @@ function bindSetupEvents() {
     state.view = "active";
     state.errors = [];
     state.limitMessage = "";
+    persistActiveGameSnapshot();
     render();
     appRoot.querySelector("[data-active-heading]")?.focus();
   });
@@ -479,6 +575,7 @@ function handleScoreSubmit() {
   const updatedTotal = updatedPlayer?.total;
   const updatedRank = rankPlayers(result.game).find((row) => row.player.id === state.selectedPlayerId)?.rank ?? null;
   state.activeGame = result.game;
+  persistActiveGameSnapshot();
   state.scoreFeedback = {
     kind: "success",
     message: `Added ${parsed.amount} points to ${targetPlayer.name}. New total: ${updatedTotal}. Rank: ${updatedRank}.`
@@ -509,12 +606,28 @@ function handleUndo() {
 
   const restoredRank = rankPlayers(result.game).find((row) => row.player.id === affectedPlayer.id)?.rank ?? null;
   state.activeGame = result.game;
+  persistActiveGameSnapshot();
   state.scoreFeedback = {
     kind: "success",
     message: `Undid ${result.undone.amount} points for ${affectedPlayer.name}. New total: ${affectedPlayer.total}. Rank: ${restoredRank}.`
   };
   render();
   appRoot.querySelector("[data-action='undo-last-score']")?.focus();
+}
+
+function persistActiveGameSnapshot() {
+  if (!state.activeGame) {
+    return;
+  }
+
+  state.savedGames = upsertSavedGame(state.savedGames, state.activeGame, {
+    updatedAt: new Date().toISOString()
+  });
+  const result = saveGames({ games: state.savedGames });
+
+  if (result.error) {
+    console.warn("Game save failed:", result.error);
+  }
 }
 
 function rejectScoreEntry(message) {
