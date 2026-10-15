@@ -1,7 +1,7 @@
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 20;
 export const MAX_NAME_LENGTH = 40;
-export const FALLBACK_TITLE = "Game night";
+export const MAX_TITLE_LENGTH = 60;
 
 export const PLAYER_COLORS = [
   { id: "blue", label: "Blue", cssClass: "marker-blue" },
@@ -73,7 +73,10 @@ export function createGame({ title, rows, now = new Date(), idSeed = "game" }) {
     return { game: null, validation };
   }
 
-  const trimmedTitle = title.trim() || FALLBACK_TITLE;
+  // Blank-after-trim means "no title": the trimmed title is stored verbatim
+  // (possibly "") and display surfaces derive an auto label at render time.
+  // Non-string input (defensive) is stored as "".
+  const trimmedTitle = typeof title === "string" ? title.trim() : "";
 
   return {
     game: {

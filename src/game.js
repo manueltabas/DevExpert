@@ -1,11 +1,56 @@
-import { FALLBACK_TITLE, createGame } from "./roster.js";
+import { MAX_TITLE_LENGTH, createGame } from "./roster.js";
 
 export const GAME_ERROR_CODES = [
   "missing-game",
   "already-finished",
   "not-finished",
-  "invalid-roster"
+  "invalid-roster",
+  "invalid-title",
+  "title-too-long"
 ];
+
+const TITLE_STAMP_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+];
+
+// Deterministic `d MMM, HH:mm` stamp (24-hour, zero-padded minutes, short
+// English months) in local time — no locale-dependent formatting, so the
+// auto-label for a stored createdAt is stable across reloads and re-renders.
+function formatTitleStamp(createdAt) {
+  if (typeof createdAt !== "string") {
+    return null;
+  }
+
+  const date = new Date(createdAt);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const day = String(date.getDate());
+  const month = TITLE_STAMP_MONTHS[date.getMonth()];
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+
+  return `${day} ${month}, ${hours}:${minutes}`;
+}
+
+// Display label for any surface that shows a game's title: the stored title
+// verbatim when it is a string with non-whitespace content (never re-trimmed
+// or rewritten), otherwise the render-time auto-label `Game — {d MMM, HH:mm}`
+// derived from createdAt, otherwise plain "Game". The label is never stored.
+export function displayGameTitle(game) {
+  const title = game?.title;
+
+  if (typeof title === "string" && title.trim() !== "") {
+    return title;
+  }
+
+  const stamp = formatTitleStamp(game?.createdAt);
+
+  return stamp ? `Game — ${stamp}` : "Game";
+}
 
 // The one-way game lifecycle transition: active -> finished. `now` is part of
 // the transition signature but deliberately unused — no timestamp is stored
@@ -28,10 +73,11 @@ export function finishGame({ game, now = new Date() } = {}) {
 // Replay: a finished game's roster becomes a brand-new active game through the
 // roster path, so every identity is game-scoped and new (`replay-game-*` ids
 // can never collide with setup-created `active-game-*` ids). Only presentation
-// copies — title, names, colors, markers (and the creation order) — while all
-// totals restart at zero and no scores, change log, or `updatedAt` carry over.
-// The input game is never mutated; the finished original stays exactly as it
-// was stored.
+// copies — names, colors, markers (and the creation order) — while all totals
+// restart at zero and no scores, change log, `updatedAt`, or title carry over:
+// replays always start untitled (title: "") and display the auto-label until
+// the scorekeeper names them. The input game is never mutated; the finished
+// original stays exactly as it was stored.
 export function replayGame({ game, now = new Date() } = {}) {
   if (!isLifecycleGame(game)) {
     return { game: null, error: "missing-game" };
@@ -47,7 +93,7 @@ export function replayGame({ game, now = new Date() } = {}) {
   }));
 
   const result = createGame({
-    title: typeof game.title === "string" ? game.title : FALLBACK_TITLE,
+    title: "",
     rows,
     now,
     idSeed: "replay-game"
@@ -74,6 +120,37 @@ export function replayGame({ game, now = new Date() } = {}) {
 
   return {
     game: result.game,
+    error: null
+  };
+}
+
+// Rename: the one pure title mutation, allowed only while a game is active —
+// finished titles are frozen (any non-active status reports
+// "already-finished", checked before the title itself is validated). The
+// trimmed title replaces the stored one in a new game object (blank after
+// trim means "no title" and stores ""), the input game is never mutated, and
+// a title longer than MAX_TITLE_LENGTH reports "title-too-long".
+export function renameGame({ game, title } = {}) {
+  if (!isLifecycleGame(game)) {
+    return { game: null, error: "missing-game" };
+  }
+
+  if (game.status !== "active") {
+    return { game: null, error: "already-finished" };
+  }
+
+  if (typeof title !== "string") {
+    return { game: null, error: "invalid-title" };
+  }
+
+  const trimmedTitle = title.trim();
+
+  if (trimmedTitle.length > MAX_TITLE_LENGTH) {
+    return { game: null, error: "title-too-long" };
+  }
+
+  return {
+    game: { ...game, title: trimmedTitle },
     error: null
   };
 }

@@ -28,13 +28,31 @@ assert.deepEqual(game.players.map((player) => player.name), ["Alex", "Alex"]);
 assert.deepEqual(game.players.map((player) => player.color), ["blue", "blue"]);
 assert.deepEqual(game.players.map((player) => player.total), [0, 0]);
 
-const fallbackTitleGame = createGame({
+// Superseded by name-game-titles: blank titles store "" (no fallback
+// substitution) — display surfaces derive the auto-label at render time.
+const blankTitleGame = createGame({
   title: "   ",
   rows: validRows,
   now: new Date("2026-10-02T10:00:00.000Z"),
   idSeed: "blank-title"
 }).game;
-assert.equal(fallbackTitleGame.title, "Game night");
+assert.equal(blankTitleGame.title, "");
+assert.equal(blankTitleGame.status, "active");
+
+const nonStringTitleGame = createGame({
+  title: 42,
+  rows: validRows,
+  now: new Date("2026-10-02T10:01:00.000Z"),
+  idSeed: "nonstring-title"
+}).game;
+assert.equal(nonStringTitleGame.title, "", "a non-string title must store the empty string");
+
+const missingTitleGame = createGame({
+  rows: validRows,
+  now: new Date("2026-10-02T10:02:00.000Z"),
+  idSeed: "missing-title"
+}).game;
+assert.equal(missingTitleGame.title, "");
 
 assert.equal(validateRoster([{ name: "Alex", color: "blue" }]).valid, false);
 assert.equal(validateRoster([{ name: "   ", color: "blue" }, { name: "Sam", color: "red" }]).valid, false);
@@ -52,4 +70,4 @@ assert.equal(twentyRows[0].color, twentyRows[7].color);
 const twentyOneRows = [...twentyRows, { id: "extra", name: "Extra", color: "blue" }];
 assert.equal(validateRoster(twentyOneRows).valid, false);
 
-console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals.");
+console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals; blank, non-string, and missing titles store the empty string (no fallback substitution).");

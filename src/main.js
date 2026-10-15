@@ -1,7 +1,7 @@
 import {
-  FALLBACK_TITLE,
   MAX_NAME_LENGTH,
   MAX_PLAYERS,
+  MAX_TITLE_LENGTH,
   MIN_PLAYERS,
   PLAYER_COLORS,
   colorForIndex,
@@ -19,7 +19,7 @@ import {
   undoLastScoreChange
 } from "./score.js";
 import { podiumRows, rankPlayers } from "./standings.js";
-import { finishGame, replayGame } from "./game.js";
+import { finishGame, displayGameTitle, renameGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
   orderSavedGamesForDisplay,
@@ -31,7 +31,7 @@ const appRoot = document.querySelector("[data-app-root]");
 const yearTarget = document.querySelector("[data-current-year]");
 const state = {
   view: "home",
-  title: FALLBACK_TITLE,
+  title: "",
   rows: createSetupRows(),
   activeGame: null,
   selectedPlayerId: null,
@@ -39,6 +39,9 @@ const state = {
   finishPromptOpen: false,
   podiumOpen: false,
   replayFeedback: null,
+  titleEditOpen: false,
+  titleDraft: "",
+  titleEditFeedback: null,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -60,7 +63,9 @@ const SCORE_ERROR_MESSAGES = {
   "missing-game": "No open game to finish.",
   "already-finished": "This game is already finished.",
   "not-finished": "Only finished games can be replayed.",
-  "invalid-roster": "This game's saved players can't be replayed."
+  "invalid-roster": "This game's saved players can't be replayed.",
+  "invalid-title": "Enter the title as plain text.",
+  "title-too-long": `Titles can be at most ${MAX_TITLE_LENGTH} characters.`
 };
 
 const SCORE_FEEDBACK_CLASS_NAMES = {
@@ -363,13 +368,13 @@ function renderSavedGameCard(game) {
   return `
     <li class="saved-game" data-saved-game-id="${gameId}">
       <div class="saved-game-info">
-        <p class="saved-game-title">${escapeHtml(game.title ?? "Untitled game")}</p>
+        <p class="saved-game-title">${escapeHtml(displayGameTitle(game))}</p>
         <p class="saved-game-meta">${players.length} players</p>
         <p class="saved-game-updated">${escapeHtml(formatSavedGameUpdated(game))}</p>
         ${names ? `<p class="saved-game-names">${names}</p>` : ""}
         ${markers ? `<div class="saved-game-markers">${markers}</div>` : ""}
       </div>
-      <button type="button" class="secondary-action resume-action" data-action="resume-game" data-game-id="${gameId}" aria-label="Resume ${escapeAttribute(game.title ?? "this game")}">Resume</button>
+      <button type="button" class="secondary-action resume-action" data-action="resume-game" data-game-id="${gameId}" aria-label="Resume ${escapeAttribute(displayGameTitle(game))}">Resume</button>
     </li>
   `;
 }
@@ -396,13 +401,13 @@ function renderFinishedGameCard(game) {
   return `
     <li class="saved-game saved-game-finished" data-saved-game-id="${gameId}">
       <div class="saved-game-info">
-        <p class="saved-game-title">${escapeHtml(game.title ?? "Untitled game")}</p>
+        <p class="saved-game-title">${escapeHtml(displayGameTitle(game))}</p>
         <p class="saved-game-meta">${players.length} players</p>
         <p class="saved-game-updated">${escapeHtml(formatSavedGameUpdated(game))}</p>
         ${names ? `<p class="saved-game-names">${names}</p>` : ""}
         ${markers ? `<div class="saved-game-markers">${markers}</div>` : ""}
       </div>
-      <button type="button" class="secondary-action resume-action" data-action="view-results" data-game-id="${gameId}" aria-label="View results ${escapeAttribute(game.title ?? "this game")}">View results</button>
+      <button type="button" class="secondary-action resume-action" data-action="view-results" data-game-id="${gameId}" aria-label="View results ${escapeAttribute(displayGameTitle(game))}">View results</button>
     </li>
   `;
 }
@@ -443,6 +448,9 @@ function handleResume(gameId) {
   state.finishPromptOpen = false;
   state.podiumOpen = false;
   state.replayFeedback = null;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -466,7 +474,7 @@ function renderSetup() {
 
         <form class="roster-form" novalidate data-roster-form>
           <label class="field-label" for="game-title">Game title</label>
-          <input id="game-title" class="text-field" name="title" maxlength="60" value="${escapeAttribute(state.title)}" autocomplete="off">
+          <input id="game-title" class="text-field" name="title" maxlength="${MAX_TITLE_LENGTH}" value="${escapeAttribute(state.title)}" placeholder="Optional — e.g. Friday game night" autocomplete="off">
 
           <div class="player-list" aria-label="Players">
             ${state.rows.map((row, index) => renderSetupRow(row, index, canRemove)).join("")}
@@ -652,10 +660,13 @@ function renderActiveGame() {
       <div class="active-board">
         <div class="active-header">
           <button type="button" class="ghost-action" data-action="back-home">All games</button>
+          ${state.titleEditOpen ? renderTitleEditForm() : `
           <div>
             <p class="eyebrow">In progress</p>
-            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(game.title)}</h2>
+            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(displayGameTitle(game))}</h2>
           </div>
+          <button type="button" class="title-edit-action" data-action="open-title-edit">Edit title</button>
+          `}
           <span class="status-pill">${game.players.length} players</span>
         </div>
 
@@ -690,6 +701,32 @@ function renderActiveGame() {
   `;
 
   bindActiveEvents();
+}
+
+// Inline title-edit form replacing the active heading and the Edit title
+// control while state.titleEditOpen is set. The draft is the raw stored title
+// (never the auto-label); the polite feedback region carries rename errors.
+function renderTitleEditForm() {
+  return `
+    <form class="title-edit-form" novalidate data-title-edit-form>
+      <p class="eyebrow">In progress</p>
+      <label class="field-label" for="active-title-input">Game title</label>
+      <input id="active-title-input" class="text-field" name="title" maxlength="${MAX_TITLE_LENGTH}" value="${escapeAttribute(state.titleDraft)}" autocomplete="off">
+      <div id="title-edit-feedback" class="form-feedback" aria-live="polite">${renderTitleEditFeedback()}</div>
+      <div class="title-edit-actions">
+        <button type="submit" class="primary-action">Save title</button>
+        <button type="button" class="secondary-action" data-action="cancel-title-edit">Cancel</button>
+      </div>
+    </form>
+  `;
+}
+
+function renderTitleEditFeedback() {
+  if (!state.titleEditFeedback) {
+    return "";
+  }
+
+  return `<p class="${scoreFeedbackClassName(state.titleEditFeedback.kind)}">${escapeHtml(state.titleEditFeedback.message)}</p>`;
 }
 
 // New Active Game destination empty state (locked copy from the spec). It is
@@ -748,7 +785,7 @@ function renderFinishedGame(game) {
           <button type="button" class="ghost-action" data-action="back-home">All games</button>
           <div>
             <p class="eyebrow">Finished</p>
-            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(game.title)}</h2>
+            <h2 id="active-title" tabindex="-1" data-active-heading>${escapeHtml(displayGameTitle(game))}</h2>
           </div>
           <span class="status-pill">${game.players.length} players</span>
         </div>
@@ -777,14 +814,14 @@ function renderFinishedGame(game) {
         </div>
       </div>
     </section>
-    ${state.podiumOpen && podium.length > 0 ? renderPodiumDialog(podium) : ""}
+    ${state.podiumOpen && podium.length > 0 ? renderPodiumDialog(podium, game) : ""}
   `;
 
   bindActiveEvents();
   bindPodiumEvents();
 }
 
-function renderPodiumDialog(podium) {
+function renderPodiumDialog(podium, game) {
   const groups = [1, 2, 3]
     .map((rank) => {
       const rows = podium.filter((row) => row.rank === rank);
@@ -808,6 +845,7 @@ function renderPodiumDialog(podium) {
     <dialog class="podium-dialog" data-podium-dialog aria-labelledby="podium-title" aria-describedby="podium-lede">
       <div class="podium-body">
         <div class="podium-confetti" data-podium-confetti aria-hidden="true">${renderPodiumConfetti()}</div>
+        <p class="podium-game-title">${escapeHtml(displayGameTitle(game))}</p>
         <h2 id="podium-title" class="podium-title">Final podium</h2>
         <p id="podium-lede" class="podium-lede">Congratulations to the top of the table.</p>
         <ol class="podium-groups" aria-label="Podium players">${groups}</ol>
@@ -977,8 +1015,36 @@ function bindActiveEvents() {
     state.finishPromptOpen = false;
     state.podiumOpen = false;
     state.replayFeedback = null;
+    state.titleEditOpen = false;
+    state.titleDraft = "";
+    state.titleEditFeedback = null;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
+  });
+
+  appRoot.querySelector("[data-action='open-title-edit']")?.addEventListener("click", () => {
+    openTitleEdit();
+  });
+
+  appRoot.querySelector("[data-title-edit-form]")?.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handleTitleSave();
+  });
+
+  appRoot.querySelector("[data-action='cancel-title-edit']")?.addEventListener("click", () => {
+    cancelTitleEdit();
+  });
+
+  // Escape cancels the edit without touching anything (Enter submits natively
+  // through the form).
+  appRoot.querySelector("[data-title-edit-form]")?.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      cancelTitleEdit();
+    }
+  });
+
+  appRoot.querySelector("#active-title-input")?.addEventListener("input", (event) => {
+    state.titleDraft = event.target.value;
   });
 
   appRoot.querySelectorAll("[data-action='select-player']").forEach((button) => {
@@ -1075,6 +1141,9 @@ function handleFinishGame() {
   state.activeGame = result.game;
   state.finishPromptOpen = false;
   state.scoreFeedback = null;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
   persistActiveGameSnapshot();
   state.podiumOpen = podiumRows(result.game).length > 0;
   render();
@@ -1104,6 +1173,61 @@ function handlePlayAgain() {
   state.finishPromptOpen = false;
   state.podiumOpen = false;
   state.replayFeedback = null;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
+  persistActiveGameSnapshot();
+  render();
+  paintStorageNotice();
+  appRoot.querySelector("[data-active-heading]")?.focus();
+}
+
+// Title editing is only offered while a game is active (the finished view has
+// no edit control, and renameGame refuses non-active games). The draft starts
+// from the raw stored title — never the auto-label.
+function openTitleEdit() {
+  if (!state.activeGame || state.activeGame.status !== "active") {
+    return;
+  }
+
+  state.titleDraft = typeof state.activeGame.title === "string" ? state.activeGame.title : "";
+  state.titleEditOpen = true;
+  state.titleEditFeedback = null;
+  render();
+  appRoot.querySelector("#active-title-input")?.focus();
+}
+
+// Cancel closes the edit without writing anything: the stored payload stays
+// byte-identical and the display label returns untouched.
+function cancelTitleEdit() {
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
+  render();
+  appRoot.querySelector("[data-active-heading]")?.focus();
+}
+
+// Saving runs the pure renameGame and persists through the unchanged
+// persistActiveGameSnapshot() — the sixth successful-mutation save trigger —
+// so the edit is saved immediately under the accepted storage rules. Guard
+// failures repaint the polite feedback region without re-rendering.
+function handleTitleSave() {
+  const result = renameGame({ game: state.activeGame, title: state.titleDraft });
+
+  if (result.error || !result.game) {
+    state.titleEditFeedback = {
+      kind: "error",
+      message: SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["invalid-title"]
+    };
+    console.warn("Game rename failed:", result.error);
+    paintTitleEditFeedback();
+    return;
+  }
+
+  state.activeGame = result.game;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
   persistActiveGameSnapshot();
   render();
   paintStorageNotice();
@@ -1256,8 +1380,27 @@ function paintReplayFeedback() {
   region.append(message);
 }
 
+function paintTitleEditFeedback() {
+  const region = appRoot.querySelector("#title-edit-feedback");
+
+  if (!region) {
+    return;
+  }
+
+  region.replaceChildren();
+
+  if (!state.titleEditFeedback) {
+    return;
+  }
+
+  const message = document.createElement("p");
+  message.className = scoreFeedbackClassName(state.titleEditFeedback.kind);
+  message.textContent = state.titleEditFeedback.message;
+  region.append(message);
+}
+
 function resetSetup() {
-  state.title = FALLBACK_TITLE;
+  state.title = "";
   state.rows = createSetupRows();
   state.activeGame = null;
   state.selectedPlayerId = null;
@@ -1265,6 +1408,9 @@ function resetSetup() {
   state.finishPromptOpen = false;
   state.podiumOpen = false;
   state.replayFeedback = null;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;

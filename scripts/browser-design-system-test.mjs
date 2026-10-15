@@ -577,6 +577,10 @@ async function runNavMatrixSession(cdp) {
   assert.equal(errorsAfterNav, 0, "nav Dashboard must clear transient setup errors");
 
   // (a) A game in progress: Active Game reopens it without a resume round-trip.
+  // Superseded by name-game-titles: the setup title field starts empty, so this
+  // session fills an explicit title to keep its exact heading assertion (the
+  // session tests reopen semantics, not title labels).
+  await fill(cdp, "#game-title", "Matrix night");
   await fill(cdp, "#player-name-1", "Alex");
   await fill(cdp, "#player-name-2", "Sam");
   await click(cdp, "[data-roster-form] button[type='submit']");
@@ -595,7 +599,7 @@ async function runNavMatrixSession(cdp) {
     totals: [...document.querySelectorAll(".active-player-total")].map((node) => node.textContent.trim()),
     focusOnHeading: Boolean(document.activeElement?.hasAttribute?.("data-active-heading"))
   }));
-  assert.equal(reopened.heading, "Game night", "the in-memory game must reopen untouched");
+  assert.equal(reopened.heading, "Matrix night", "the in-memory game must reopen untouched");
   assert.deepEqual(reopened.totals, ["7", "0"]);
   assert.equal(reopened.focusOnHeading, true, "Active Game must focus the game heading");
   const rawAfterReopen = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
