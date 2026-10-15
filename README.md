@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, and replay flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, and design-system flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -41,6 +41,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:finish-game`: run only the Chrome finish/read-only standings checks.
 - `npm run test:browser:podium`: run only the Chrome podium celebration checks.
 - `npm run test:browser:play-again`: run only the Chrome replay interaction checks.
+- `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -64,6 +65,19 @@ total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
 announces "Nothing to undo yet." without changing anything. Names and
 colors can repeat; numbered markers distinguish players.
+
+Every screen shares the v2 visual system: a warm ivory canvas with
+cool-tinted rounded cards, Plus Jakarta Sans typography (linked from Google
+Fonts with the system stack as a fallback, so the app renders normally when
+offline), and a top navigation bar present everywhere. The nav's **Dashboard**,
+**New Game**, and **Active Game** items are plain buttons that move between
+views without writing anything: Dashboard goes home (and marks the current
+item on finished views too), New Game opens setup exactly as you left it, and
+Active Game reopens the game in progress — or, if none is open, the most
+recently updated saved unfinished game — or shows the "No game in progress"
+empty state with a **New game** shortcut when nothing is in progress. Focus
+moves to each destination's heading, the current item is highlighted with
+`aria-current`, and keyboard focus stays visible throughout.
 
 Every successful game mutation — starting a game, saving points, a
 successful undo, and confirming **Finish game** — is saved to this browser's
@@ -131,6 +145,6 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. Every listed feature is
-implemented; `restrict-score-entry-input` is the final slice, awaiting
-independent validation and merge.
+Run `$feature-flow` one feature at a time. The eleven MVP features are
+accepted; `refresh-design-system` (the v2 visual refresh) is implemented and
+awaiting independent validation, followed by its six dependent v2 features.
