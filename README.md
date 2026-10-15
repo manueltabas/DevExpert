@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, and design-system flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, and game-title flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -42,15 +42,17 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:podium`: run only the Chrome podium celebration checks.
 - `npm run test:browser:play-again`: run only the Chrome replay interaction checks.
 - `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
+- `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
 - `npm run test:standings`: run only the ranking unit checks.
-- `npm run test:game`: run only the game-lifecycle (finishGame/replayGame) unit checks.
+- `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
 - `CI=true ./init.sh`: run the same gate in CI-style mode.
 
-Choose **New game**, enter a title and 2–20 player names, select colors, then
-choose **Start game**. The leaderboard shows rows in descending total order:
+Choose **New game**, optionally name the table in the "Game title" field and
+enter 2–20 player names, select colors, then choose **Start game**. The
+leaderboard shows rows in descending total order:
 the highest total leads, equal totals share a competition rank (12, 12, 8 →
 ranks 1, 1, 3), and tied players keep their creation order. Pick a player with
 its row's **Add points** button, type a signed whole-number amount
@@ -66,6 +68,24 @@ through the history one change at a time; undoing with an empty history
 announces "Nothing to undo yet." without changing anything. Names and
 colors can repeat; numbered markers distinguish players.
 
+Every game carries a display title the scorekeeper controls. The setup field
+is optional (up to 60 characters, trimmed once when the game starts): a titled
+game shows that text verbatim everywhere — dashboard cards, the active header,
+the podium, and the card buttons' accessible names ("Resume Catan Friday").
+Leaving it blank shows an auto label instead: `Game — 12 Oct, 21:08`, derived
+from the game's creation time in your local timezone (or plain `Game` when no
+usable timestamp exists). The label is computed at render time only — it is
+never stored, never rewritten, and stable across reloads. While a game is in
+progress, **Edit title** beside the active header opens an inline form: type
+the new title and choose **Save title** (or press Enter) to rename it
+immediately, or press Escape / choose **Cancel** to leave everything
+untouched. Renaming saves like every other change — if storage is blocked the
+edit still works in memory behind the usual notice. Finishing freezes the
+title: finished views and their cards show it with no edit control, and **Play
+again** starts the rematch untitled (under its own auto-label) instead of
+copying the original name. Games saved before this feature keep displaying
+their stored titles exactly as saved.
+
 Every screen shares the v2 visual system: a warm ivory canvas with
 cool-tinted rounded cards, Plus Jakarta Sans typography (linked from Google
 Fonts with the system stack as a fallback, so the app renders normally when
@@ -80,7 +100,8 @@ moves to each destination's heading, the current item is highlighted with
 `aria-current`, and keyboard focus stays visible throughout.
 
 Every successful game mutation — starting a game, saving points, a
-successful undo, and confirming **Finish game** — is saved to this browser's
+successful undo, confirming **Finish game**, renaming the game, and
+replaying a finished game — is saved to this browser's
 local storage, so reloading the page never loses a game in progress. The home
 screen's **Unfinished games** panel lists each saved game with its title,
 player count, player names and color markers, and an "Updated" timestamp,
@@ -118,10 +139,11 @@ only — it writes nothing and the saved game gains no new fields.
 
 One more round is one click away: the finished view's **Play again** button,
 below the standings, creates a separate new active game from the finished
-game's roster — the same title and the same names, colors, and numbered
-markers, but brand-new game and player identities, every total at zero, and
-no scores or undo history carried over (undoing right away announces
-"Nothing to undo yet."). The rematch opens straight into scoring with the
+game's roster — the same names, colors, and numbered markers, but brand-new
+game and player identities, every total at zero, no scores or undo history
+carried over, and no title copied (the rematch starts untitled under its own
+auto-label until you name it). Undoing right away announces
+"Nothing to undo yet." The rematch opens straight into scoring with the
 first player selected and is saved immediately like every other mutation, so
 it appears under **Unfinished games** while the finished original stays saved
 and read-only under **Finished games** — after any reload, both games are
@@ -145,6 +167,8 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. The eleven MVP features are
-accepted; `refresh-design-system` (the v2 visual refresh) is implemented and
-awaiting independent validation, followed by its six dependent v2 features.
+Run `$feature-flow` one feature at a time. The eleven MVP features and the v2
+`refresh-design-system` are accepted and merged; `name-game-titles` is
+implemented and awaiting independent validation, followed by the remaining
+five v2 features (`track-game-activity`, `add-quick-score-entry`,
+`show-player-numbers`, `show-score-distribution`, `extend-podium-actions`).

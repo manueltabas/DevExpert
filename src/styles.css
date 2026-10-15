@@ -865,6 +865,40 @@ h3 {
   border-color: var(--primary);
 }
 
+/* Active-header title edit: the display-mode control beside the heading and
+   the inline edit form that replaces heading + control while editing. */
+.title-edit-action {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  color: var(--primary-dark);
+  background: var(--surface);
+  border: 1px solid rgba(0, 80, 159, 0.32);
+  border-radius: var(--radius-full);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.title-edit-form {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.title-edit-form .text-field {
+  min-width: 0;
+}
+
+.title-edit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .active-player-name {
   min-width: 0;
   font-size: 1.08rem;
@@ -1080,6 +1114,18 @@ h3 {
     top: calc(100% + 24px);
     transform: translateX(var(--confetti-drift, 0px)) rotate(var(--confetti-spin, 360deg));
   }
+}
+
+/* The finished game's display label, shown as a muted eyebrow-style line
+   above the suite-frozen podium title. */
+.podium-game-title {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
 }
 
 .podium-title {
@@ -1333,5 +1379,29 @@ h3 {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+/* The unfinished active header hosts a fourth control ("Edit title") whose
+   labeled text cannot shrink below ~94px; the header row's other fixed items
+   (All games + the players pill + gaps) already need 221px of the 264px
+   available at 320px, so a one-line row geometrically cannot fit. Scoped via
+   :has() so only the view that gained a control wraps — no other view's
+   accepted layout changes. The edit form takes a full row below it. */
+@media (max-width: 720px) {
+  .active-header:has(.title-edit-action),
+  .active-header:has(.title-edit-form) {
+    flex-wrap: wrap;
+  }
+
+  .title-edit-form {
+    flex: 1 1 100%;
+    order: 4;
+  }
+}
+
+@media (max-width: 360px) {
+  .title-edit-action {
+    width: 100%;
   }
 }

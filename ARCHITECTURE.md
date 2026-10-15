@@ -46,14 +46,16 @@ entries skipped by the per-entry crash guard (0 for clean and failed reads).
 `upsertSavedGame` replaces a saved game by id or appends it, and
 `orderSavedGamesForDisplay` sorts copies most-recently-updated first with
 deterministic tie-breaks. `src/main.js` persists the active game after every
-successful game mutation (start, save points, undo, finish, replay), renders
+successful game mutation (start, save points, undo, finish, rename, replay),
+renders
 the home "Unfinished games" list from the active saved games and the
 "Finished games" list from the finished ones, and resumes a saved game by
 restoring it as the active game — so undo works immediately after a reload,
 undone changes never resurrect, and finished games reopen read-only. Ranks
 stay render-time only and are never persisted.
 
-`src/game.js` contains the pure game-lifecycle transitions. `finishGame` is
+`src/game.js` contains the pure game-lifecycle transitions and the title
+contract. `finishGame` is
 the one-way `active → finished` change: it accepts only a `status: "active"`
 game (guarding `missing-game` and `already-finished`), returns a new game
 object with only `status` changed, never mutates its input, and stores no
@@ -63,17 +65,40 @@ transition: it accepts only a `status: "finished"` game (guarding
 maps the finished roster back to roster rows, and calls `createGame` with the
 `replay-game` id seed — so every game and player identity is structurally new
 (`replay-game-*` ids can never collide with setup-created `active-game-*`
-ids). It copies only presentation (title, names, colors, markers, and the
+ids). It copies only presentation (names, colors, markers, and the
 creation order, restoring atypical-but-valid stored values literally with
-regenerated fallbacks) while every total restarts at zero and no change log
-or `updatedAt` carries over; the input game is never mutated. `src/main.js`
+regenerated fallbacks) while every total restarts at zero and no change log,
+`updatedAt`, or title carries over — replays always start untitled
+(`title: ""`); the input game is never mutated. `renameGame` is the one pure
+title mutation: it accepts only an active game (any other status reports
+`already-finished` — finished titles are frozen), rejects non-string titles
+(`invalid-title`) and trimmed titles over `MAX_TITLE_LENGTH` (60) characters
+(`title-too-long`), and returns a new game object with the trimmed title
+(`""` when blank after trimming) without mutating its input.
+`displayGameTitle(game)` is the display helper every title surface calls: it
+returns the stored title verbatim (never re-trimmed or rewritten) when it is
+a string with non-whitespace content, otherwise the deterministic
+`Game — {d MMM, HH:mm}` auto-label derived from `createdAt` in local time
+(short English months, 24-hour clock, no locale-dependent formatting), or
+plain `Game` when the timestamp is missing or unparseable — a render-time
+value that is never stored. `src/main.js`
 renders a `status: "finished"` game as a read-only variant of the active view
 — same header (eyebrow "Finished"), back control, storage notice, and full
 render-time-ranked leaderboard, but with a polite `role="status"` note and
 none of the score mutation controls (no Add points buttons, no score-entry
 panel, no undo) — plus the finished view's only mutation control, a "Play
 again" primary action below the standings with its own polite
-`#replay-feedback` live region for guard messages. Confirming the inline
+`#replay-feedback` live region for guard messages. The unfinished active
+header additionally offers **Edit title** beside the heading
+(`data-action="open-title-edit"`, ≥44px): activating it swaps the heading and
+the control for an inline labeled form (`.title-edit-form` with
+`#active-title-input`, `maxlength=60`, prefilled with the raw stored title —
+never the auto-label — and a polite `#title-edit-feedback` live region) where
+Save title/Enter runs `renameGame` and Cancel/Escape closes without writing;
+saving persists through `persistActiveGameSnapshot()`, so renaming is the
+sixth successful-mutation save trigger under the storage-failure rules, guard
+failures repaint the feedback region without re-rendering, and the edit
+state resets exactly where the other transient flags reset. Confirming the inline
 finish prompt and activating Play again both call
 `persistActiveGameSnapshot()`, so finishing and replaying are the fourth and
 fifth successful-mutation save triggers, and the home screen additionally
@@ -86,7 +111,9 @@ confirm-finish sets a transient `state.podiumOpen` flag (reset wherever the
 finish prompt resets, so reopening, View results, or reloading never
 re-celebrates), and `renderFinishedGame` then renders the app's only `<dialog>`
 — a `.podium-dialog` opened with `showModal()` (guarded) that derives its
-content at render time from `podiumRows(state.activeGame)`: ascending "Rank 1"
+content at render time from `podiumRows(state.activeGame)`: a muted
+`.podium-game-title` line showing `displayGameTitle(game)` as the first
+content element (before the suite-frozen "Final podium" title), ascending "Rank 1"
 to "Rank 3" groups with every tied player included and empty rank groups
 omitted, tokens/rows/aria-labels reusing the accepted conventions, and a
 decorative `aria-hidden` confetti layer of 14 deterministic pieces animated
@@ -152,7 +179,7 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  and design-system flows.
+  design-system, and game-title flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -167,9 +194,12 @@ persistence slice is implemented.
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
   games list, the storage-health notices with the write-safety rule, the
-  dismissible podium dialog with confetti, and the `beforeinput` entry guard
+  dismissible podium dialog with confetti, the inline active-header title
+  edit form with its save trigger, and the `beforeinput` entry guard
   that keeps the score field to plain signed-integer drafts.
-- `src/roster.js`: roster limits, colors, validation, identities, and zero-score game creation.
+- `src/roster.js`: roster limits, colors, validation, identities, and
+  zero-score game creation with the trimmed optional title (`""` when blank
+  or non-string) and the `MAX_TITLE_LENGTH` cap.
 - `src/score.js`: score-change bounds, plain signed integer parsing (the
   `isPlainScoreDraft` entry pattern and the final plain-format gate in
   `parseScoreAmount`), safe-integer guarded application, latest-change undo,
@@ -180,10 +210,13 @@ persistence slice is implemented.
   never collapsed).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
   `active` to `finished` with `missing-game`/`already-finished` guards and no
-  mutation or extra fields, and the `replayGame` transition that turns a
-  finished game into a brand-new active game through the roster path with
+  mutation or extra fields, the `replayGame` transition that turns a finished
+  game into a brand-new untitled active game through the roster path with
   `missing-game`/`not-finished`/`invalid-roster` guards and presentation-only
-  copying.
+  copying, the `renameGame` title mutation with
+  `missing-game`/`already-finished`/`invalid-title`/`title-too-long` guards,
+  and the `displayGameTitle` render-time label helper (verbatim stored title,
+  deterministic `Game — {d MMM, HH:mm}` auto-label, plain `Game` fallback).
 - `src/storage.js`: pure single-key local-storage persistence: versioned
   envelope load/save with injectable storage, result-code errors, per-entry
   crash guard with `droppedCount` reporting, upsert by id, and
@@ -247,6 +280,17 @@ persistence slice is implemented.
   per view, focus-to-heading, the Active Game resolution order, byte-identical
   storage across navigation); ≥44px targets; the skip link; and reduced-motion
   plus storage-notice regressions — using isolated headless Chrome.
+- `scripts/browser-game-title-test.mjs`: desktop/mobile game-title checks —
+  the empty-default setup field with its label/placeholder/cap and
+  preserve/reset transitions, titled and blank games end to end (verbatim
+  labels on headers/cards/accessible names/podium, stored `""` for blanks,
+  deterministic auto-label format and reload stability with byte-identical
+  storage), the inline edit form (open/focus, Enter/Save persistence with a
+  fresh `updatedAt`, Cancel/Escape byte-identity, clear-to-blank), blocked
+  writes with the unchanged notice and in-memory rename, frozen finished
+  titles with no edit control, untitled replays with a byte-identical
+  original, verbatim pre-feature records, and the 320px/keyboard baseline —
+  using isolated headless Chrome.
 
 ## Boundaries
 
@@ -273,7 +317,8 @@ path. No value is ever silently rewritten; a transient decimal such as `2.5`
 still reaches the save-side decimals message exactly as accepted.
 
 Every successful game mutation (starting a game, saving points, a successful
-undo, confirming Finish game, and replaying a finished game) persists the
+undo, confirming Finish game, renaming the active game, and replaying a
+finished game) persists the
 active game — players, totals, and the full change log — under the single
 versioned `scorekeeper:games` key,
 and the home screen lists saved games most-recently-updated first: active
@@ -304,8 +349,10 @@ revisit.
 Replay closes the loop: the finished view's "Play again" control calls
 `replayGame`, which builds a brand-new active game through the roster path
 with game-scoped `replay-game-*` identities and copies only presentation —
-title, names, colors, markers, and creation order — while totals restart at
-zero and no change log or `updatedAt` carries over. The handler mirrors the
+names, colors, markers, and creation order — while totals restart at
+zero, no change log or `updatedAt` carries over, and the title is never
+copied (the rematch starts untitled and displays the auto-label until it is
+renamed). The handler mirrors the
 resume pattern (slot replacement with transient-flag resets, then
 `persistActiveGameSnapshot()` as the fifth save trigger, then a render that
 lands in the scoring view with focus on the heading), leaves the finished
@@ -325,3 +372,10 @@ renders no game data and writes nothing. The visual system is paint-only by
 contract: selectors, ids, `data-*` attributes, grid areas, copy, and the
 storage envelope are stable across the restyle, which is what lets every
 pre-existing suite pass unmodified.
+
+Titles are a display-only layer over the same game objects: the game `id`
+never derives from the title, stored title text renders verbatim (never
+re-trimmed or rewritten), the auto-label is computed at render time and never
+stored or written into any input, `renameGame` is the only title mutation
+(active games only, frozen once finished), the unfinished active header is
+the only edit point, and the setup/edit fields always carry raw user text.

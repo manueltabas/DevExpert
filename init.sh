@@ -75,6 +75,9 @@ node --check scripts/browser-play-again-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-design-system-test.mjs'
 node --check scripts/browser-design-system-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-game-title-test.mjs'
+node --check scripts/browser-game-title-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 

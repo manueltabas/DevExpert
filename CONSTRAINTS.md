@@ -14,6 +14,25 @@
   Scoring, ranking, undo, persistence, finishing, podium, and
   replay each need their own feature evidence.
 - Games must contain 2–20 players with trimmed, nonblank names of at most 40 characters.
+- Game titles are display-only: game identity is the game `id`, never the
+  title. `createGame` stores the trimmed optional title verbatim (possibly
+  `""`; non-string input stores `""`) and never substitutes a fallback title.
+  `renameGame` in `src/game.js` is the only title mutation: it accepts only
+  games whose `status` is `active` (any non-active status reports
+  `already-finished` before the title itself is validated — finished titles
+  are frozen), reports `invalid-title` for non-string titles and
+  `title-too-long` for trimmed titles over 60 characters, returns a new game
+  object without mutating its input, and the unfinished active header is the
+  only edit point (no edit control on finished views, home cards, or the
+  podium). The auto-label (`Game — {d MMM, HH:mm}` derived from `createdAt`
+  in local time with short English months and a 24-hour clock, or plain
+  `Game` when the timestamp is missing or unparseable) is derived at render
+  time by `displayGameTitle`, is never stored, never written into any input,
+  and never rewritten: stored title text renders verbatim without
+  re-trimming, and renaming persists through `persistActiveGameSnapshot()`
+  as the sixth successful-mutation save trigger under the storage-failure
+  rules. Replays always start untitled (`title: ""`) — the original title is
+  never copied.
 - Use blue, red, yellow, green, orange, white, or black markers. Duplicate names
   and colors are allowed; player IDs must be independent of both.
 - Every new player starts at zero.
@@ -23,11 +42,11 @@
   totals, and the full `{ id, playerId, amount }` change log — plus one
   storage-owned `updatedAt` ISO stamp written only on the stored copy. Saves
   happen exactly on successful game mutations (starting a game, saving
-  points, a successful undo, confirming Finish game, and replaying a
-  finished game); failed validations, selection changes, feedback-only
-  repaints, and no-op undos never write. Never persist rank fields, and
-  never remove saved games in a slice that has no delete feature. Resume
-  restores the saved game verbatim as the active game, so undo works
+  points, a successful undo, confirming Finish game, replaying a finished
+  game, and renaming the active game); failed validations, selection changes,
+  feedback-only repaints, and no-op undos never write. Never persist rank
+  fields, and never remove saved games in a slice that has no delete feature.
+  Resume restores the saved game verbatim as the active game, so undo works
   immediately and a successful undo persists the shortened log — undone
   changes must never reappear after a reload.
 - Storage helpers (`src/storage.js`) must never throw: reads return
@@ -103,8 +122,9 @@
   which builds the rematch through the `createGame` roster path with
   game-scoped identities (the `replay-game` id seed, so replay ids can never
   collide with setup-created `active-game-*` ids) and copies only
-  presentation — title, names, colors, markers, and creation order — never
-  totals, the change log, or `updatedAt`. The input finished game must never
+  presentation — names, colors, markers, and creation order — never
+  totals, the change log, `updatedAt`, or the title (replays start untitled
+  with `title: ""`). The input finished game must never
   be mutated, and its stored entry must never be re-persisted: it stays
   byte-identical across the replay and every later mutation of the replay,
   because `upsertSavedGame` keys on the new id. Replay persists through

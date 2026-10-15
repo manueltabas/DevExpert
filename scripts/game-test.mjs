@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
-import { FALLBACK_TITLE, createGame } from "../src/roster.js";
+import { createGame } from "../src/roster.js";
 import { applyScoreChange } from "../src/score.js";
-import { finishGame, replayGame, GAME_ERROR_CODES } from "../src/game.js";
+import { finishGame, replayGame, renameGame, displayGameTitle, GAME_ERROR_CODES } from "../src/game.js";
 
 // finishGame guards: missing/invalid games report "missing-game" and never throw
 assert.deepEqual(finishGame({ game: null }), { game: null, error: "missing-game" });
@@ -140,14 +140,14 @@ assert.deepEqual(
   { game: null, error: "not-finished" }
 );
 
-// replayGame: a scored finished game replays with new identities, copied
-// presentation, zero totals, and no change log
+// Superseded by name-game-titles: replays no longer copy the title — they
+// always start untitled (title: "") so the dashboard shows the auto-label.
 const replayNow = new Date("2026-10-12T20:00:00.000Z");
 const replayResult = replayGame({ game: scoredResult.game, now: replayNow });
 assert.equal(replayResult.error, null);
 const replayed = replayResult.game;
 assert.equal(replayed.status, "active", "the replay must be an active game");
-assert.equal(replayed.title, "Scored finish", "the title must copy verbatim");
+assert.equal(replayed.title, "", "the replay must start untitled, never copying the original title");
 assert.notEqual(replayed.id, scoredResult.game.id, "the replay needs a new game id");
 assert.ok(replayed.id.startsWith("replay-game-"), "the replay id must come from the replay-game seed");
 assert.ok(!("changes" in replayed), "the replay must not copy the change log");
@@ -214,13 +214,18 @@ assert.equal(atypicalReplay.game.players[1].marker, "2", "a non-string marker fa
 assert.equal(atypicalReplay.game.players[1].order, 1, "a non-integer order falls back to the regenerated order");
 assert.deepEqual(atypicalReplay.game.players.map((player) => player.total), [0, 0]);
 
-// replayGame: a non-string title falls back defensively (createGame trims it)
+// replayGame: the stored title never influences the replay — a non-string
+// title (or any title) is dropped and the replay starts untitled
 const untitledReplay = replayGame({
   game: { id: "odd-title", status: "finished", title: 42, players: atypicalGame.players },
   now: replayNow
 });
 assert.equal(untitledReplay.error, null);
-assert.equal(untitledReplay.game.title, FALLBACK_TITLE, "a non-string title must fall back to FALLBACK_TITLE");
+assert.equal(untitledReplay.game.title, "", "a non-string title must not reach the replayed game");
+const titledReplaySource = { ...atypicalGame, title: "Original name" };
+const titledReplay = replayGame({ game: titledReplaySource, now: replayNow });
+assert.equal(titledReplay.error, null);
+assert.equal(titledReplay.game.title, "", "a stored title must not be copied into the replay");
 
 // replayGame guards: roster-validation failures report "invalid-roster"
 const invalidRosterCases = [
@@ -246,7 +251,7 @@ const twentyFinished = finishGame({ game: twentyCurrent });
 const twentyReplay = replayGame({ game: twentyFinished.game, now: replayNow });
 assert.equal(twentyReplay.error, null);
 assert.equal(twentyReplay.game.players.length, 20);
-assert.equal(twentyReplay.game.title, "Big table finish");
+assert.equal(twentyReplay.game.title, "", "the 20-player replay also starts untitled");
 assert.notEqual(twentyReplay.game.id, twentyFinished.game.id);
 assert.ok(twentyReplay.game.id.startsWith("replay-game-"));
 assert.ok(!("changes" in twentyReplay.game), "the 20-player replay must not copy the change log");
@@ -263,8 +268,118 @@ assert.deepEqual(
 assert.ok(twentyReplay.game.players.every((player) => player.total === 0), "all 20 replay totals must be zero");
 assert.ok(twentyReplay.game.players.every((player) => player.id.startsWith("replay-game-player-")));
 
-// the error codes live in a local list, separate from SCORE_ERROR_CODES
-assert.deepEqual(GAME_ERROR_CODES, ["missing-game", "already-finished", "not-finished", "invalid-roster"]);
+// renameGame guards: missing/invalid games report "missing-game" and never throw
+assert.deepEqual(renameGame({ game: null, title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: undefined, title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({}, {}), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame(), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: "not-a-game", title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: 42, title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: [], title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: { id: "no-players" }, title: "Any" }), { game: null, error: "missing-game" });
+assert.deepEqual(renameGame({ game: { id: "bad-players", players: "nope" }, title: "Any" }), { game: null, error: "missing-game" });
 
-console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields, preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed, copied title/names/colors/markers/order with literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, a defensive non-string title fallback, non-mutating replay input, and a local error-code list.");
+// renameGame guards: any non-active status freezes the title as
+// "already-finished" — checked before the title itself is validated
+assert.deepEqual(
+  renameGame({ game: { id: "done", status: "finished", title: "Frozen", players: [{ id: "p-1" }] }, title: "New" }),
+  { game: null, error: "already-finished" }
+);
+assert.deepEqual(
+  renameGame({ game: { id: "statusless", players: [{ id: "p-1" }] }, title: "" }),
+  { game: null, error: "already-finished" },
+  "the status guard runs before the title validation"
+);
+assert.deepEqual(
+  renameGame({ game: { id: "odd", status: "something-else", players: [] }, title: 42 }),
+  { game: null, error: "already-finished" }
+);
+
+// renameGame guards: a non-string title reports "invalid-title"
+assert.deepEqual(
+  renameGame({ game: { id: "g", status: "active", players: [] }, title: 42 }),
+  { game: null, error: "invalid-title" }
+);
+assert.deepEqual(
+  renameGame({ game: { id: "g", status: "active", players: [] }, title: null }),
+  { game: null, error: "invalid-title" }
+);
+assert.deepEqual(
+  renameGame({ game: { id: "g", status: "active", players: [] } }),
+  { game: null, error: "invalid-title" }
+);
+
+// renameGame guards: a trimmed title over MAX_TITLE_LENGTH reports
+// "title-too-long" while exactly 60 characters rename successfully
+assert.deepEqual(
+  renameGame({ game: { id: "g", status: "active", players: [] }, title: "x".repeat(61) }),
+  { game: null, error: "title-too-long" }
+);
+assert.deepEqual(
+  renameGame({ game: { id: "g", status: "active", players: [] }, title: `  ${"x".repeat(60)}  ` }),
+  { game: { id: "g", status: "active", title: "x".repeat(60), players: [] }, error: null },
+  "exactly 60 characters after trimming must be accepted"
+);
+
+// renameGame success: the trimmed title lands in a new game object, blank
+// after trim stores "", and interior whitespace/casing stay verbatim
+const renameNow = { id: "g", status: "active", title: "Old name", createdAt: "2026-10-12T10:00:00.000Z", players: [{ id: "p-1" }] };
+const renameResult = renameGame({ game: renameNow, title: "  Catan Friday  " });
+assert.deepEqual(renameResult, { game: { ...renameNow, title: "Catan Friday" }, error: null });
+const blankRename = renameGame({ game: renameNow, title: "   " });
+assert.deepEqual(blankRename, { game: { ...renameNow, title: "" }, error: null }, "blank-after-trim stores the empty title");
+const interiorRename = renameGame({ game: renameNow, title: "  Friday   night  " });
+assert.equal(interiorRename.game.title, "Friday   night", "interior whitespace is preserved verbatim");
+
+// renameGame never mutates the input game and changes nothing else
+const renameSnapshot = structuredClone(renameNow);
+renameGame({ game: renameNow, title: "Mutating name" });
+assert.deepEqual(renameNow, renameSnapshot, "renameGame must never mutate the input game");
+
+// displayGameTitle: stored titles render verbatim (never re-trimmed/rewritten)
+assert.equal(displayGameTitle({ title: "Catan Friday", createdAt: "2026-10-12T21:08:00.000Z" }), "Catan Friday");
+assert.equal(displayGameTitle({ title: "  Padded  ", createdAt: "2026-10-12T21:08:00.000Z" }), "  Padded  ", "stored titles are never re-trimmed");
+assert.equal(displayGameTitle({ title: "Game — 12 Oct, 21:08", createdAt: "2026-10-13T08:00:00.000Z" }), "Game — 12 Oct, 21:08", "a user title that collides with the label shape still renders verbatim");
+
+// displayGameTitle: blank titles derive the deterministic auto-label from
+// createdAt in local time (`Game — {d MMM, HH:mm}`, never stored)
+assert.equal(
+  displayGameTitle({ title: "", createdAt: new Date(2026, 9, 12, 21, 8).toISOString() }),
+  "Game — 12 Oct, 21:08"
+);
+assert.equal(
+  displayGameTitle({ title: "   ", createdAt: new Date(2026, 0, 3, 5, 7).toISOString() }),
+  "Game — 3 Jan, 05:07",
+  "single-digit days stay unpadded while hours and minutes are zero-padded"
+);
+assert.equal(
+  displayGameTitle({ title: "", createdAt: new Date(2026, 11, 31, 0, 0).toISOString() }),
+  "Game — 31 Dec, 00:00",
+  "midnight uses the 24-hour 00:00 form"
+);
+assert.equal(
+  displayGameTitle({ title: "Game night", createdAt: "not a date" }),
+  "Game night",
+  "a usable stored title wins over an unusable timestamp"
+);
+
+// displayGameTitle: unusable timestamps degrade to plain "Game"
+assert.equal(displayGameTitle({ title: "", createdAt: "not a date" }), "Game");
+assert.equal(displayGameTitle({ title: "", createdAt: 42 }), "Game");
+assert.equal(displayGameTitle({ title: "", createdAt: null }), "Game");
+assert.equal(displayGameTitle({ title: "" }), "Game");
+assert.equal(displayGameTitle({}), "Game");
+assert.equal(displayGameTitle(null), "Game");
+assert.equal(displayGameTitle(undefined), "Game");
+assert.equal(displayGameTitle({ title: 42, createdAt: new Date(2026, 9, 12, 21, 8).toISOString() }), "Game — 12 Oct, 21:08", "a non-string title is not a user title");
+
+// displayGameTitle is stable and pure: same input, same output, no mutation
+const labelGame = { title: "", createdAt: new Date(2026, 9, 12, 21, 8).toISOString() };
+assert.equal(displayGameTitle(labelGame), displayGameTitle(labelGame));
+assert.deepEqual(labelGame, { title: "", createdAt: new Date(2026, 9, 12, 21, 8).toISOString() });
+
+// the error codes live in a local list, separate from SCORE_ERROR_CODES
+assert.deepEqual(GAME_ERROR_CODES, ["missing-game", "already-finished", "not-finished", "invalid-roster", "invalid-title", "title-too-long"]);
+
+console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields, preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed that start untitled (the original title is never copied) with copied names/colors/markers/order, literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, non-mutating replay input, renameGame guards (missing-game/already-finished/invalid-title/title-too-long) with trim-once success and no input mutation, displayGameTitle verbatim/auto-label/Game fallback formatting, and a local error-code list.");
 
