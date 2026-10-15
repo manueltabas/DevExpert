@@ -1405,3 +1405,119 @@ h3 {
     width: 100%;
   }
 }
+
+/* Recent entries panel (track-game-activity): a display-only log of the
+   newest score changes inside the active view's score panel, between the
+   score form and the finish section. No interactive controls, no motion. */
+.recent-entries {
+  margin-top: var(--space-md);
+  min-width: 0;
+}
+
+.recent-entries-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.recent-entries-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: 10px;
+}
+
+.recent-entries-header .eyebrow {
+  margin: 0;
+}
+
+.recent-entries-last {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.recent-entries-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recent-entry {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+
+.recent-entry .player-token {
+  width: 32px;
+  height: 32px;
+  align-self: center;
+  font-size: 0.9rem;
+}
+
+.recent-entry-name {
+  min-width: 0;
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.recent-entry-amount {
+  color: var(--text);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Sign characters stay visible so color is never the only signal; both token
+   colors already pass AA as text on the panel surface (success/validation
+   message precedents). */
+.recent-entry-amount.is-positive {
+  color: var(--success);
+}
+
+.recent-entry-amount.is-negative {
+  color: var(--error);
+}
+
+.recent-entry-time {
+  color: var(--muted);
+  font-size: var(--text-label-md);
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Scoped ≤360px compaction so a wide amount ("+1000000 pts") and an absolute
+   time ("12 Oct, 21:08") never collide with the name column. */
+@media (max-width: 360px) {
+  .recent-entry {
+    gap: 8px;
+  }
+
+  .recent-entry .player-token {
+    width: 28px;
+    height: 28px;
+    font-size: 0.85rem;
+  }
+
+  .recent-entry-name {
+    font-size: var(--text-label-sm);
+  }
+
+  .recent-entry-amount,
+  .recent-entry-time {
+    font-size: var(--text-label-sm);
+  }
+}

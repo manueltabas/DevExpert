@@ -1,5 +1,10 @@
 export const MAX_SCORE_ABS = 1_000_000;
 
+// The Recent entries panel cap (track-game-activity): the sidebar shows at
+// most this many newest changes, so long logs stay scannable without
+// pagination. Pure display concern — storage keeps the full log.
+export const RECENT_ENTRIES_LIMIT = 8;
+
 export const SCORE_ERROR_CODES = [
   "empty",
   "not-a-number",
@@ -61,7 +66,7 @@ export function parseScoreAmount(raw) {
   return { amount };
 }
 
-export function applyScoreChange({ game, playerId, amount }) {
+export function applyScoreChange({ game, playerId, amount, now = new Date() }) {
   const player = game?.players?.find((candidate) => candidate.id === playerId) ?? null;
 
   if (!player) {
@@ -89,7 +94,10 @@ export function applyScoreChange({ game, playerId, amount }) {
   const players = game.players.map((candidate) =>
     candidate.id === playerId ? { ...candidate, total: nextTotal } : candidate
   );
-  const change = { id: createChangeId(), playerId, amount };
+  // Each change carries its own `at` ISO stamp (injectable clock) so per-entry
+  // relative times survive reloads; the game-level `updatedAt` stays
+  // storage-owned and cannot date older entries.
+  const change = { id: createChangeId(), playerId, amount, at: now.toISOString() };
   const changes = [...(game.changes ?? []), change];
 
   return {
@@ -134,4 +142,28 @@ export function undoLastScoreChange({ game }) {
     undone,
     error: null
   };
+}
+
+// Pure view over the stored change sequence for the Recent entries panel:
+// the newest `limit` changes as { change, player } pairs, newest first.
+// Changes whose playerId resolves to no player are skipped (and do not count
+// toward the cap); the input game and its log are never mutated.
+export function recentScoreChanges({ game, limit = RECENT_ENTRIES_LIMIT } = {}) {
+  const changes = Array.isArray(game?.changes) ? game.changes : [];
+  const players = Array.isArray(game?.players) ? game.players : [];
+  const cap = Number.isInteger(limit) && limit > 0 ? limit : changes.length;
+  const entries = [];
+
+  for (let index = changes.length - 1; index >= 0 && entries.length < cap; index -= 1) {
+    const change = changes[index];
+    const player = players.find((candidate) => candidate?.id === change?.playerId) ?? null;
+
+    if (!player) {
+      continue;
+    }
+
+    entries.push({ change, player });
+  }
+
+  return entries;
 }

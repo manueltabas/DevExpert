@@ -259,7 +259,10 @@ assert.deepEqual(
   [10, -3],
   "the change log must persist so undo works after a reload"
 );
-assert.deepEqual(Object.keys(reloaded.games[0].changes[0]).sort(), ["amount", "id", "playerId"]);
+// Superseded by track-game-activity: new change entries carry an `at` ISO
+// stamp, so the round-tripped key list gains "at". This asserts shape only —
+// envelope version, entry validation, and save/load behavior are unchanged.
+assert.deepEqual(Object.keys(reloaded.games[0].changes[0]).sort(), ["amount", "at", "id", "playerId"]);
 assert.equal(reloaded.games[0].status, "active");
 
-console.log("Storage tests passed: single versioned key, round-trip save/load, upsert/append/immutability, deterministic ordering, invalid-payload rejection, entry crash guard with droppedCount reporting, unavailable/throwing storage, and write failures.");
+console.log("Storage tests passed: single versioned key, round-trip save/load (change entries keep their `at` stamps verbatim), upsert/append/immutability, deterministic ordering, invalid-payload rejection, entry crash guard with droppedCount reporting, unavailable/throwing storage, and write failures.");

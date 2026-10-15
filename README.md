@@ -43,6 +43,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:play-again`: run only the Chrome replay interaction checks.
 - `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
 - `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
+- `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -111,6 +112,22 @@ after resuming and undone changes never reappear after a reload. Games are
 saved only in this browser — clearing site data removes them. Ranks stay
 render-time only and are never stored.
 
+Every surface that shows freshness reads the same stored timestamps, so
+there is one notion of "last changed". Dashboard cards render
+"Updated just now", "Updated 10m ago", "Updated 3h ago", "Updated 2d ago" —
+floored minutes, hours, and days — switching to an absolute "Updated 12 Oct,
+21:08" stamp once a game is more than a week old; finished cards age from
+their frozen finish time, and a replay never rewrites the original's stamp.
+While a game is open, the score-entry panel shows a **Recent entries** list
+below the form: the newest changes first (up to eight), each row with the
+player's token and name, the signed amount ("+5 pts" / "−2 pts"), and its
+relative time, with a "Last: Sam +10" line beside the header showing the
+latest change for undo context. Undo removes the newest entry and the list
+and header recompute automatically; a brand-new or replayed game shows "No
+score changes yet." Games saved before this feature keep working — their
+older entries simply show a muted "—" instead of a time, and cards with
+missing stamps fall back to the plain "Updated" label.
+
 Ending a game is deliberate and irreversible. The score-entry panel's
 **Finish game** action opens an inline confirmation — "Finish this game?"
 with the warning "Finished games can't be reopened for scoring. Final
@@ -168,7 +185,8 @@ notice automatically; there are no retry or dismiss buttons.
 ## Next steps
 
 Run `$feature-flow` one feature at a time. The eleven MVP features and the v2
-`refresh-design-system` are accepted and merged; `name-game-titles` is
-implemented and awaiting independent validation, followed by the remaining
-five v2 features (`track-game-activity`, `add-quick-score-entry`,
-`show-player-numbers`, `show-score-distribution`, `extend-podium-actions`).
+`refresh-design-system` and `name-game-titles` features are accepted and
+merged; `track-game-activity` is implemented and awaiting independent
+validation, followed by the remaining four v2 features
+(`add-quick-score-entry`, `show-player-numbers`, `show-score-distribution`,
+`extend-podium-actions`).

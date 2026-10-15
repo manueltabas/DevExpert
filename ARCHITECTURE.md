@@ -22,10 +22,15 @@ text — `parseScoreAmount` runs a final plain-format gate after the
 finite/integer/zero/range checks, so exact-integer non-plain text such as
 `1e3`, `0x10`, or `10.` returns the existing `not-a-number` code instead of
 saving — plus `applyScoreChange`, which updates
-one player's total and appends `{ id, playerId, amount }` to the in-memory
-`game.changes` log, and `undoLastScoreChange`, which pops the newest log
-entry, restores that player's total, and returns a new game object without
-mutating the input. `src/standings.js` contains the pure ranking helpers
+one player's total and appends `{ id, playerId, amount, at }` to the in-memory
+`game.changes` log (each entry stamped `at: now.toISOString()` from the
+injectable clock, so per-entry ages survive reloads), `undoLastScoreChange`,
+which pops the newest log entry, restores that player's total, and returns a
+new game object without mutating the input, and `recentScoreChanges`, the pure
+view behind the Recent entries panel: the newest `RECENT_ENTRIES_LIMIT` (8)
+changes as `{ change, player }` pairs, newest first, skipping entries whose
+`playerId` resolves to no player, never mutating its input.
+`src/standings.js` contains the pure ranking helpers
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
 creation-order ties, and `podiumRows(game)`, which filters that ranking to
@@ -81,7 +86,24 @@ a string with non-whitespace content, otherwise the deterministic
 `Game — {d MMM, HH:mm}` auto-label derived from `createdAt` in local time
 (short English months, 24-hour clock, no locale-dependent formatting), or
 plain `Game` when the timestamp is missing or unparseable — a render-time
-value that is never stored. `src/main.js`
+value that is never stored. `formatRelativeTimestamp(value, now = new Date())`
+is the one deterministic relative-time formatter for activity stamps: under a
+minute (including future clock skew) renders `just now`, then floored
+`{m}m ago` / `{h}h ago` / `{d}d ago` buckets up to seven days, then the same
+absolute `d MMM, HH:mm` stamp the auto-label uses; non-string or unparseable
+input returns `null` so callers pick their own fallback. `src/main.js`
+uses it for the dashboard cards' `Updated {token}` recency label
+(`updatedAt` → `createdAt` → the bare `Updated` fallback) and for the Recent
+entries panel's time cells, which render the token with an initial capital or
+a muted `—` when an entry predates the per-change `at` stamp. The panel
+itself (`renderRecentEntries`) is a display-only block inside the active
+view's score panel between the score form and the finish section: an eyebrow
+header with the `Last: {name} {signedAmount}` undo-context line and an
+`aria-label="Recent entries"` list of newest-first rows (player token,
+escaped name, signed `{+|-}{amount} pts`, relative time). It has no
+interactive controls and no live region of its own — undo derives for free
+because the popped change stops rendering — and finished views render no
+panel. `src/main.js`
 renders a `status: "finished"` game as a read-only variant of the active view
 — same header (eyebrow "Finished"), back control, storage notice, and full
 render-time-ranked leaderboard, but with a polite `role="status"` note and
@@ -179,7 +201,7 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, and game-title flows.
+  design-system, game-title, and game-activity flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -195,15 +217,18 @@ persistence slice is implemented.
   undo-last-score control, the finish-game confirmation, the home Finished
   games list, the storage-health notices with the write-safety rule, the
   dismissible podium dialog with confetti, the inline active-header title
-  edit form with its save trigger, and the `beforeinput` entry guard
-  that keeps the score field to plain signed-integer drafts.
+  edit form with its save trigger, the `beforeinput` entry guard
+  that keeps the score field to plain signed-integer drafts, the dashboard
+  cards' deterministic `Updated {token}` recency label, and the display-only
+  Recent entries panel in the active score panel.
 - `src/roster.js`: roster limits, colors, validation, identities, and
   zero-score game creation with the trimmed optional title (`""` when blank
   or non-string) and the `MAX_TITLE_LENGTH` cap.
 - `src/score.js`: score-change bounds, plain signed integer parsing (the
   `isPlainScoreDraft` entry pattern and the final plain-format gate in
-  `parseScoreAmount`), safe-integer guarded application, latest-change undo,
-  and the in-memory change log.
+  `parseScoreAmount`), safe-integer guarded application, per-change `at`
+  stamps from the injectable clock, latest-change undo, the in-memory change
+  log, and the `recentScoreChanges` panel view with `RECENT_ENTRIES_LIMIT`.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
   plus the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
@@ -216,7 +241,10 @@ persistence slice is implemented.
   copying, the `renameGame` title mutation with
   `missing-game`/`already-finished`/`invalid-title`/`title-too-long` guards,
   and the `displayGameTitle` render-time label helper (verbatim stored title,
-  deterministic `Game — {d MMM, HH:mm}` auto-label, plain `Game` fallback).
+  deterministic `Game — {d MMM, HH:mm}` auto-label, plain `Game` fallback)
+  plus the `formatRelativeTimestamp` relative-time formatter used by the
+  activity surfaces (locked thresholds, absolute branch shared with the
+  auto-label).
 - `src/storage.js`: pure single-key local-storage persistence: versioned
   envelope load/save with injectable storage, result-code errors, per-entry
   crash guard with `droppedCount` reporting, upsert by id, and
@@ -291,6 +319,18 @@ persistence slice is implemented.
   titles with no edit control, untitled replays with a byte-identical
   original, verbatim pre-feature records, and the 320px/keyboard baseline —
   using isolated headless Chrome.
+- `scripts/browser-game-activity-test.mjs`: desktop/mobile activity-timestamp
+  and recent-entries checks — UI-scored entries rendering newest first with
+  the `Last:` header and per-entry `at` stamps, reload/resume persistence with
+  byte-identical storage, seeded-stamp sessions asserting exact
+  `Just now`/`10m ago`/`3h ago`/`2d ago`/absolute tokens and the
+  `Updated {token}` card chain (createdAt fallback, bare `Updated`), the cap
+  at 8 rows with skipped ghost entries, legacy no-`at` rows degrading to
+  muted `—`, undo derivation with fresh `updatedAt` and byte-identical no-op
+  undos, blocked-write undo with the unchanged notice, frozen finished stamps
+  with no finished panel and a byte-identical replay original, and the
+  320×720/1280×800 overflow, focusable-count, frozen `--muted`, AA contrast,
+  and zero-console-error baseline — using isolated headless Chrome.
 
 ## Boundaries
 
@@ -379,3 +419,17 @@ re-trimmed or rewritten), the auto-label is computed at render time and never
 stored or written into any input, `renameGame` is the only title mutation
 (active games only, frozen once finished), the unfinished active header is
 the only edit point, and the setup/edit fields always carry raw user text.
+
+Activity is a view over already-stored data with no parallel state.
+Last-activity is the storage-owned `updatedAt` stamped by
+`upsertSavedGame` on every successful mutation persist, so the six save
+triggers (start, score save, undo, finish, rename, replay) are exactly the
+activity set — navigation, resume, prompt open/cancel, selection, and failed
+writes never refresh it, and a finished game's stamp freezes at its finish
+persist (replay never re-persists the original). Per-change `at` ISO stamps
+from `applyScoreChange`'s injectable clock are the only new stored shape:
+they date individual entries so relative times survive reloads, while legacy
+entries without `at` keep working and render a muted `—`. All recency
+rendering funnels through `formatRelativeTimestamp` (no locale APIs), and
+the Recent entries panel is pure display over `recentScoreChanges` — capped,
+newest first, zero interactive controls, no extra live region.
