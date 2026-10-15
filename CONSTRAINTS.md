@@ -147,3 +147,21 @@
   mutates the input game, never touches `game.status` or `player.order`, and
   never stores ranks. Undo survives reloads through the persisted change log;
   finishing, and replay slices must keep these rules.
+- The UI renders from the translated v2 token layer in `src/styles.css` only:
+  screens are built with plain CSS custom properties (colors, type, radius,
+  spacing, shadows) mapped from `docs/design/update-v2/warm_tactile_scorekeeper/DESIGN.md`,
+  and no restyle may reintroduce hardcoded palette values that already have a
+  token (the error family in particular must come from `var(--error)` /
+  `var(--error-container)` / the tertiary mapping). Tailwind, CDN scripts, icon
+  fonts, and any build step or runtime dependency are rejected; icons degrade
+  to labeled text or `aria-hidden` inline SVG, and every icon-only control
+  must carry an accessible text label.
+- `--muted` is suite-frozen at `#6D655C` (`rgb(109, 101, 92)`): the undo suite
+  asserts the info feedback color exactly. Changing that token requires an
+  honest update to `scripts/browser-undo-test.mjs` first, never a silent restyle.
+- The top navigation is display/state only: it renders static markup on every
+  screen, paints `aria-current="page"` per view, and resolves its Active Game
+  destination (in-memory game → most recently updated saved active game → the
+  Active Game empty state) without ever writing storage — navigation calls no
+  `saveGames`, mutates no saved games, and adds no save trigger. Every nav
+  action moves focus to the destination view's primary heading.

@@ -4,7 +4,17 @@
 
 The app is a static browser app served over HTTP. The current bootstrap has one
 entry point, `index.html`, with `src/styles.css` for the responsive visual
-system and `src/main.js` for home, roster setup, and active-game views.
+system and `src/main.js` for home, roster setup, and active-game views. The
+visual system is a plain-CSS token layer: `src/styles.css` translates the v2
+token file (`docs/design/update-v2/warm_tactile_scorekeeper/DESIGN.md`) into
+custom properties — warm ivory canvas, cool card surfaces, the Plus Jakarta
+Sans type scale, radius/spacing/shadow tokens — and every screen renders from
+those tokens. Plus Jakarta Sans is linked from Google Fonts in `index.html`
+(preconnect + one stylesheet, weights 400/600/700/800, `display=swap`) with the
+accepted system stack as the declared fallback; no font files are committed, no
+Tailwind, no icon fonts, no build step. The one suite-frozen token value is
+`--muted: #6D655C`, kept because the undo suite asserts the info-feedback
+color `rgb(109, 101, 92)` exactly.
 State lives in memory in the browser module. `src/roster.js` contains pure
 roster validation and game creation helpers. `src/score.js` contains pure
 scoring helpers: signed integer parsing restricted to plain signed integer
@@ -94,6 +104,28 @@ hidden pages), dismissal cleanup does not depend on that event alone; the
 nothing: opening and dismissing trigger no save, and the stored payload stays
 byte-identical.
 
+The top navigation is the app's display/state-only shell layer. `index.html`
+renders a static app bar on every screen — brand block (marker dots, "Game
+night", the accepted eyebrow string) plus a `<nav aria-label="Primary">` of
+three `type="button"` items with distinct action ids (`nav-dashboard`,
+`nav-new-game`, `nav-active-game`) so they can never collide with the in-view
+`data-action` values that code and suites target. `src/main.js` binds those
+handlers exactly once at startup: Dashboard reuses the accepted back-home
+semantics (view home, transient setup errors cleared) and focuses the home
+heading; New Game shows setup as it was left (the scratchpad is not reset) and
+focuses the setup heading; Active Game resolves in order (1) an in-memory
+`status: "active"` game reopened without a resume round-trip, (2) otherwise
+the first `status: "active"` game in `orderSavedGamesForDisplay` order resumed
+through the unchanged `handleResume`, (3) otherwise the new `active-empty`
+view — the Active Game empty state with its locked copy and a New game button
+that reuses the accepted hero transition. `paintNav()` runs inside `render()`
+and paints `aria-current="page"` per view (Dashboard on home and on finished
+views, New Game on setup, Active Game on an unfinished game or the empty
+state). Navigation never writes: no `saveGames` call, no saved-game mutation,
+no save trigger; every action moves focus to the destination heading (home,
+setup, and empty-state headings carry `tabindex="-1"` plus
+`data-home-heading`/`data-setup-heading`/`data-active-empty-heading`).
+
 Storage failures are surfaced, never silent. `src/main.js` tracks the startup
 read result (`storageReadError`, `storageDroppedCount`) and the latest write
 result (`lastSaveError`) and derives one polite `role="status"` notice
@@ -119,16 +151,19 @@ persistence slice is implemented.
   unless `HOST` or `PORT` is set.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
-  leaderboard, undo, save/resume, storage-failure, finish-game, podium, and
-  replay flows.
+  leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
+  and design-system flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
 ## Source layout
 
-- `index.html`: semantic shell and app mount point.
+- `index.html`: semantic shell (static app bar with the primary navigation,
+  font links) and app mount point.
 - `src/main.js`: renders home/setup/active views (with the read-only finished
-  variant, its Play again control, and the podium celebration modal), handles
+  variant, its Play again control, the podium celebration modal, and the
+  `active-empty` Active Game destination empty state), binds the one-time top
+  navigation handlers and paints `aria-current` per view, handles
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
   games list, the storage-health notices with the write-safety rule, the
@@ -153,8 +188,9 @@ persistence slice is implemented.
   envelope load/save with injectable storage, result-code errors, per-entry
   crash guard with `droppedCount` reporting, upsert by id, and
   most-recently-updated display ordering.
-- `src/styles.css`: design tokens, layout, responsive rules, focus styles, and
-  reduced-motion defaults.
+- `src/styles.css`: v2 design-token layer (colors, type scale, radius, spacing,
+  shadows translated from the token file), layout, responsive rules, focus
+  styles, and reduced-motion defaults.
 - `scripts/static-server.mjs`: small Node HTTP static-file server shared by the
   dev server and smoke check. It serves only the explicit public shell files
   needed by the app and does not expose repository documents, metadata, dotfiles,
@@ -203,6 +239,14 @@ persistence slice is implemented.
   replays from reopened finished games, the polite invalid-roster refusal,
   blocked-write honesty with the accepted notice, and 320px/keyboard/focus
   checks — using isolated headless Chrome.
+- `scripts/browser-design-system-test.mjs`: desktop/mobile visual-system
+  checks — blocked-font fallback with the declared stack, hierarchy, and
+  tabular numerals; per-view token and layout assertions at 1280×800 and
+  320×720 (ivory canvas, cool cards, primary/tertiary/error mappings, panel
+  stacking, zero overflow); the nav behavior matrix (labels, `aria-current`
+  per view, focus-to-heading, the Active Game resolution order, byte-identical
+  storage across navigation); ≥44px targets; the skip link; and reduced-motion
+  plus storage-notice regressions — using isolated headless Chrome.
 
 ## Boundaries
 
@@ -272,3 +316,12 @@ through the polite `#replay-feedback` region with code-only console
 diagnostics instead of silent no-ops, and the control lives only on the
 finished view — never inside the podium dialog or on home cards. Saved-game
 deletion remains a separate feature.
+
+The top navigation sits above all of this as a pure view layer: it changes
+`state.view`, repaints `aria-current`, and moves focus — nothing else. Its
+Active Game destination reuses the existing resume path rather than adding a
+second one, and its empty state is a new render branch (`active-empty`) that
+renders no game data and writes nothing. The visual system is paint-only by
+contract: selectors, ids, `data-*` attributes, grid areas, copy, and the
+storage envelope are stable across the restyle, which is what lets every
+pre-existing suite pass unmodified.

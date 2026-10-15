@@ -90,6 +90,7 @@ if (yearTarget) {
 }
 
 render();
+bindTopNav();
 document.documentElement.dataset.appReady = "true";
 
 function render() {
@@ -99,15 +100,103 @@ function render() {
 
   if (state.view === "setup") {
     renderSetup();
-    return;
-  }
-
-  if (state.view === "active") {
+  } else if (state.view === "active") {
     renderActiveGame();
+  } else if (state.view === "active-empty") {
+    renderActiveEmpty();
+  } else {
+    renderHome();
+  }
+
+  paintNav();
+}
+
+// The header is static markup in index.html, so its handlers bind exactly once.
+// Nav items use distinct action ids (nav-*) so they can never collide with the
+// in-view data-action values (new-game, back-home, ...) that suites and code target.
+function bindTopNav() {
+  document.querySelector("[data-action='nav-dashboard']")?.addEventListener("click", handleNavDashboard);
+  document.querySelector("[data-action='nav-new-game']")?.addEventListener("click", handleNavNewGame);
+  document.querySelector("[data-action='nav-active-game']")?.addEventListener("click", handleNavActiveGame);
+}
+
+function handleNavDashboard() {
+  // Back-home semantics: leave the current view and clear transient setup errors.
+  state.view = "home";
+  state.errors = [];
+  state.limitMessage = "";
+  render();
+  appRoot.querySelector("[data-home-heading]")?.focus();
+}
+
+function handleNavNewGame() {
+  // Destination semantics: show setup as it was left — the scratchpad is not reset.
+  state.view = "setup";
+  render();
+  appRoot.querySelector("[data-setup-heading]")?.focus();
+}
+
+function handleNavActiveGame() {
+  // (1) A game is already in progress in memory: reopen it without a resume
+  // round-trip and without writing (covers blocked-storage sessions too).
+  if (state.activeGame && state.activeGame.status === "active") {
+    const needsRender = state.view !== "active";
+    state.view = "active";
+
+    if (needsRender) {
+      render();
+    }
+
+    appRoot.querySelector("[data-active-heading]")?.focus();
     return;
   }
 
-  renderHome();
+  // (2) Otherwise resume the most recently updated saved active game, exactly
+  // like the card's Resume button (a read-only restore; no storage write).
+  const nextActiveGame = orderSavedGamesForDisplay(state.savedGames)
+    .find((game) => game.status === "active") ?? null;
+
+  if (nextActiveGame) {
+    handleResume(nextActiveGame.id);
+
+    if (state.view === "active" && state.activeGame?.id === nextActiveGame.id) {
+      return;
+    }
+    // handleResume refused the saved entry (unusable players) — fall through.
+  }
+
+  // (3) Nothing in progress: the Active Game empty state.
+  state.view = "active-empty";
+  render();
+  appRoot.querySelector("[data-active-empty-heading]")?.focus();
+}
+
+// aria-current is display/state only: it never writes storage and never mutates games.
+function paintNav() {
+  const dashboardButton = document.querySelector("[data-action='nav-dashboard']");
+  const newGameButton = document.querySelector("[data-action='nav-new-game']");
+  const activeGameButton = document.querySelector("[data-action='nav-active-game']");
+  const viewingFinishedGame = state.view === "active" && state.activeGame?.status === "finished";
+  const viewingActiveGame = state.view === "active" && state.activeGame?.status === "active";
+  const currentButton = (state.view === "home" || viewingFinishedGame)
+    ? dashboardButton
+    : state.view === "setup"
+      ? newGameButton
+      : (state.view === "active-empty" || viewingActiveGame)
+        ? activeGameButton
+        : null;
+
+  for (const button of [dashboardButton, newGameButton, activeGameButton]) {
+    if (!button) {
+      continue;
+    }
+
+    if (button === currentButton) {
+      button.setAttribute("aria-current", "page");
+    } else {
+      button.removeAttribute("aria-current");
+    }
+  }
 }
 
 function renderHome() {
@@ -119,7 +208,7 @@ function renderHome() {
     <section class="hero-panel" aria-labelledby="home-title">
       <div class="hero-copy">
         <p class="eyebrow">Ready for the next table?</p>
-        <h2 id="home-title">Track scores while the game stays on the table.</h2>
+        <h2 id="home-title" tabindex="-1" data-home-heading>Track scores while the game stays on the table.</h2>
         <p>Add the people playing, choose easy-to-spot colors, and start everyone at zero.</p>
       </div>
       <div class="hero-actions" aria-label="Game actions">
@@ -370,7 +459,7 @@ function renderSetup() {
         <div class="setup-heading">
           <div>
             <p class="eyebrow">New game</p>
-            <h2 id="setup-title">Who is playing?</h2>
+            <h2 id="setup-title" tabindex="-1" data-setup-heading>Who is playing?</h2>
           </div>
           <span class="status-pill">${state.rows.length}/${MAX_PLAYERS} players</span>
         </div>
@@ -601,6 +690,29 @@ function renderActiveGame() {
   `;
 
   bindActiveEvents();
+}
+
+// New Active Game destination empty state (locked copy from the spec). It is
+// only reached through the top navigation; the non-nav renderActiveGame
+// `!game` redirect to home stays untouched. Navigation never writes storage.
+function renderActiveEmpty() {
+  appRoot.innerHTML = `
+    <section class="active-empty" aria-labelledby="active-empty-title">
+      <div class="empty-state">
+        <p class="eyebrow">Active game</p>
+        <h2 id="active-empty-title" class="empty-title" tabindex="-1" data-active-empty-heading>No game in progress</h2>
+        <p>Start a new game to begin tracking scores. It will appear here until it's finished.</p>
+        <button type="button" class="primary-action" data-action="new-game">New game</button>
+      </div>
+    </section>
+  `;
+
+  appRoot.querySelector("[data-action='new-game']")?.addEventListener("click", () => {
+    resetSetup();
+    state.view = "setup";
+    render();
+    appRoot.querySelector("#game-title")?.focus();
+  });
 }
 
 function renderFinishSection() {
