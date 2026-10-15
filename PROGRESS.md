@@ -2,21 +2,24 @@
 
 ## Current verified state
 
-- Phase: `restrict-score-entry-input` independently accepted (`accepted`) — all 11 features complete; PR handoff for review is next.
+- Phase: all 11 MVP features are `accepted` and merged to `main` (restrict-score-entry-input merged via PR #15). The v2 design-update discovery is complete: build brief, domain model, glossary, risks, and DESIGN.md updated, with design assets versioned under `docs/design/update-v2/`.
+- Seven v2 features appended to `feature_list.json` as `not_started`: `refresh-design-system`, `name-game-titles`, `track-game-activity`, `add-quick-score-entry`, `show-player-numbers`, `show-score-distribution`, and `extend-podium-actions`. Each depends on `refresh-design-system`.
+- Next step: plan `refresh-design-system` on `codex/refresh-design-system` (planner spec first), then run the standard feature flow.
 - Repository root: directory containing this file (`/Users/mtabas/Documents/DevExpert` in the current checkout).
 - Standard startup/readiness path: `./init.sh`.
 - Standard verification path: `CI=true ./init.sh`, which runs syntax, roster/standings/score/game/storage units, HTTP smoke, and Chrome browser checks (roster, scoring, ranking, undo, save/resume, storage-failure feedback, finish/read-only standings, the podium celebration, and replay).
 - Local app command: `npm run dev`, serving `http://127.0.0.1:4173/` by default.
-- Next step: merge the `restrict-score-entry-input` PR — with its merge, the full 11-feature MVP is delivered.
-- Features: all 11 features are `accepted`: `bootstrap-web-shell`,
-  `create-game-roster`, `add-player-score`, `rank-leaderboard`,
-  `undo-latest-score`, `resume-saved-game`, `handle-storage-failure`,
-  `finish-game`, `celebrate-podium`, `play-again`, and
-  `restrict-score-entry-input`.
-- Blockers: none for the feature. Screenshot files live outside the repo in the OS temp directory and could not be opened for visual inspection this session; readability was verified programmatically instead. Local HTTP and Chrome ran without restriction.
-- Last verification: 2026-10-12.
+- Blockers: none.
+- Last verification: 2026-10-15 (discovery/planning update; feature gates unchanged since 2026-10-12).
 
 ## Session log
+
+### 2026-10-15 — v2 design-update discovery and feature planning
+
+- Reviewed the five-screen v2 design set and token file with the user; adopted them as the visual source of truth and moved the assets from the untracked `Design update/` folder into `docs/design/update-v2/`.
+- Updated `CONTEXT.md` (four new glossary terms plus a decoration warning), `docs/build-brief.md` (delivered-MVP status, v2 scope, extended non-goals and validation), `docs/domain-model.md` (game titles, activity timestamps, player numbers, derived views), `docs/risks-and-open-questions.md` (game identification resolved; new implementation-time decisions), and `DESIGN.md` (new visual source of truth; mockup decoration marked do-not-implement).
+- Agreed scope: visual refresh plus bounded additions (titles, activity timestamps + recent entries, quick tap counters, player numbers, distribution bar, podium actions). Explicitly out of scope: rounds/timers, dashboard statistics, presets, roster reuse, one-tap games; Tailwind rejected in favor of plain CSS with linked fonts and fallbacks.
+- Appended the seven v2 features to `feature_list.json` as `not_started` with `depends_on: ["refresh-design-system"]` except the foundation feature itself.
 
 ### 2026-10-12 — Score-entry restriction implementation (restrict-score-entry-input)
 

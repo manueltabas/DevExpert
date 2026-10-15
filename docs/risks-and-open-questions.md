@@ -2,27 +2,41 @@
 
 ## Blocking next phase
 
-None for preparing the minimal repository harness. The core workflow and visual direction are agreed.
+None. The v2 scope, visual source of truth, and stack approach are agreed; feature specs can be derived from `build-brief.md`, the domain model, and ../DESIGN.md.
+
+## Resolved decisions
+
+- Game identification (previously implementation-time): optional title set during setup, editable while in progress, frozen at finish; blank titles display an auto date-based label. Chosen with the v2 design.
+- Tailwind: rejected. Tokens are translated to plain CSS custom properties; web fonts are linked, not bundled.
 
 ## Implementation-time decisions
 
 - Minimum roster: propose 2 players; the user confirmed only the maximum of 20.
-- Game identification: provide a simple editable title or a generated date-based label. The title shown in the mockup is illustrative.
 - Player names: define blank/duplicate handling and a reasonable length limit while retaining independent player IDs.
 - Scores: set safe integer bounds, reject decimals and non-numbers, and decide whether a zero entry is ignored. Totals can be negative.
 - Undo: define whether repeated presses walk backward and whether the latest undo survives reload. At minimum, reverse the latest score change during active play.
 - Prevent accidental finishing with a clear confirmation because finished games cannot reopen.
-- Storage format remains a later persistence decision. Bootstrap chose dependency-free Node scripts for the local HTTP server and smoke check. Detect unavailable storage and invalid saved data without silent loss when persistence is added.
-- English UI copy is a working assumption, consistent with the conversation and the chosen document language; the user explicitly chose English for documents.
+- Score distribution semantics: decide what the bar shows when the game total is negative or zero (e.g. hide, or show absolute shares with a caption). Must not imply a misleading "leader" when penalties dominate.
+- Quick tap counters: confirm the final preset set from the mockup (+1, +5, +10, +25, −1, −5, −10) and whether tapping applies immediately or stages the draft amount before Save points.
+- Relative timestamps: define "Updated Xm ago" formatting and thresholds, and whether a clock-less environment (corrupt/missing timestamps) degrades to absolute dates.
+- "Active Game" navigation: define behavior when no game is in progress (empty state prompting New game) and which game it opens when several are active (most recent activity).
+- Auto-label format for blank titles (e.g. date-based), keeping it distinct from editable titles.
+- Font and icon fallbacks: system font stack metrics differ from Plus Jakarta Sans; define the fallback order and the small inline-SVG/labeled-text set that replaces icon-font glyphs when offline.
+- English UI copy is confirmed (user chose English for documents and the app).
 
 ## Later / outside MVP
 
-Choose a static hosting provider when deployment is requested. Offline/PWA support, export/import, deletion of saved games, and concurrent browser-tab editing are not part of the agreed initial scope.
+Choose a static hosting provider when deployment is requested. Offline/PWA support, export/import, deletion of saved games, and concurrent browser-tab editing are not part of the agreed initial scope. The mockup decoration items called out in the brief's non-goals (rounds, timers, statistics, presets, roster reuse, one-tap games) stay out of scope here too.
 
 ## Risks and responses
 
 - Browser data can be cleared or unavailable, especially in private browsing. Explain local-only retention and surface save failures. No backup or cross-device recovery is promised.
-- Repeated colors and up to 20 players can reduce readability. Keep names visible, use outlined markers, and test long scrolling lists.
+- Repeated colors and up to 20 players can reduce readability. Keep names visible, use outlined markers, and add player-number badges; test long scrolling lists.
 - Ties can place many players on one podium step. Use flexible groups and retain the full leaderboard.
 - Celebration motion can be distracting. Keep confetti brief and respect reduced-motion settings.
-- A generated mockup is a direction reference. Written behavior and accessible responsive controls take precedence over decorative details.
+- Linked web fonts and icon fonts fail offline or on flaky connections. System fallbacks must keep the layout usable; verify an offline render.
+- The v2 mockups are denser than the current UI (distribution bar, entry log, chips). Verify contrast, focus order, and touch targets; written behavior takes precedence over decorative details.
+
+## Research tasks
+
+None currently. Font-fallback rendering and negative-total distribution behavior are verified during implementation rather than researched upfront.

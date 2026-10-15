@@ -2,50 +2,56 @@
 
 ## Status
 
-Accepted visual direction: the user approved the generated mobile/desktop concept. Project documents use English. The initial tokens below translate the concept into implementation guidance.
+Accepted visual direction (v2): the warm ivory canvas gains cool-tinted card surfaces, Plus Jakarta Sans typography, and a Material-style token system. The five-screen mockup set under `docs/design/update-v2/` is the visual source of truth. Project documents use English.
 
-## Generated concept
+## Existing design assets
 
-- Image: [Desktop and mobile scorekeeper](docs/design/concepts/scorekeeper-desktop-mobile-v1.png)
-- Role: active game screen, showing responsive leaderboard and individual score entry.
-- Status: inspiration, accepted direction. Generated with the built-in imagegen tool.
-- Generated text, decorative details, and exact spacing are not implementation requirements. Game titles shown in the image are illustrative.
+- Screens (PNG + reference HTML), authority: **source of truth for visual direction**:
+  - [Dashboard with games](docs/design/update-v2/scorekeeper_dashboard/screen.png) — home with ongoing/history panels, hero, top navigation.
+  - [Dashboard empty state](docs/design/update-v2/dashboard_empty_state/screen.png) — first-run hero and both empty panels.
+  - [New game setup](docs/design/update-v2/new_game_setup/screen.png) — roster rows, token color pickers, game title, setup sidebar.
+  - [Active game](docs/design/update-v2/active_game_scorekeeper/screen.png) — leaderboard plus score-entry panel with quick counters, recent entries, distribution bar.
+  - [Final podium](docs/design/update-v2/end_of_game_podium_summary/screen.png) — podium modal with three exit actions.
+- Token file: [warm_tactile_scorekeeper/DESIGN.md](docs/design/update-v2/warm_tactile_scorekeeper/DESIGN.md) — full YAML token scale (colors, type, radii, spacing). Authoritative for values; the summary below is the working subset.
+- Reference HTML uses Tailwind CDN and icon fonts; implementation stays plain CSS with linked fonts and fallbacks (decided; see build brief). Mockup HTML is a fidelity reference, not code to copy.
+- Superseded: [scorekeeper-desktop-mobile-v1.png](docs/design/concepts/scorekeeper-desktop-mobile-v1.png) — the original generated concept; kept for history only.
 
-## Visual direction
+## Mockup decoration — do not implement
 
-- Warm ivory surfaces, charcoal text, rounded cards, restrained paper texture, colorful pawn markers, and large score numerals.
-- Desktop: leaderboard beside score entry. Mobile: compact player rows with touch-friendly score controls. Support scrolling for up to 20 players.
-- Player colors: blue, red, yellow, green, orange, white, black; colors may repeat. Keep names visible and outline white markers. Do not rely on color alone.
-- Accessibility baseline: readable contrast, keyboard-operable controls, visible focus, and reduced-motion support for celebration effects.
+Round/turn labels and timers ("Round 6", "Turn 6 · 48m", "Round active"), dashboard statistics (win streaks, "Active Roster", "nights recorded"), named game presets, "Fill group" roster reuse, and "Quick 4-player game" are decoration in the mockups and are excluded in the build brief's non-goals. Sample data in mockups ("tst. asa", scores) is illustrative.
 
-## Confirmed behavior that design must preserve
+## Product feel
 
-- One scorekeeper, no account; game history stays in the current browser.
-- Add positive or negative points to individual players. Others remain unchanged. Highest total leads; ties share rank (1, 1, 3).
-- Undo the latest score change.
-- Resume unfinished games. Finish saves read-only standings and opens a top-three podium modal with confetti; ties must be accommodated.
-- Play again copies the players into a new game with zero scores.
+Warm, tactile tabletop companion: a warm ivory page canvas with cool lavender-white cards floating on it, generous rounded corners, soft shadows, charcoal text, one confident blue primary action, playful pawn/token color dots as the only strong chroma. Dense but calm: chips, badges, and small caps labels organize information without clutter.
 
-## Initial design tokens
+## Colors (working subset)
 
-- Background: `#FAF5EB`; surface: `#FFFDF8`; text: `#20242B`; primary action: `#0868C9` with white text; border: `#DED6C9`.
-- Player markers: blue `#1479DE`, red `#E5483B`, yellow `#F5C518`, green `#28956B`, orange `#F28A2B`, white `#FFFFFF`, black `#202124`. These are marker colors, not automatic text backgrounds.
-- Typography: rounded system sans-serif stack, 16px baseline body text, bold headings and tabular score numerals. Choose any display-font dependency during implementation.
-- Spacing: 8px base rhythm; 16–24px card padding. Cards use approximately 16px corner radii and subtle shadows.
+- Canvas `#FAF5EB`; card surfaces `#FFFFFF` / `#F1F3FD` / `#EBEEF7` (low→high); text `#181C23` with variant `#414752`.
+- Primary `#005DB7` / container `#0868C9` on-white text `#FFFFFF`; primary container tints `#E2EAFF`, `#D6E3FF`.
+- Secondary (warm neutrals) `#635E53` / container `#E7DFD1`; tertiary (burnt orange accents, e.g. Finish game) `#883A00` / container `#AE4C00` / tint `#FFE5D9`; error `#BA1A1A` / container `#FFDAD6`.
+- Outlines `#727784` (strong) and `#C1C6D5` (subtle); legacy warm border `#DED6C9`.
+- Player tokens: blue `#1479DE`, red `#E5483B`, yellow `#F5C518`, green `#28956B`, orange `#F28A2B`, white `#FFFFFF`, black `#202124`. Colors may repeat; white/yellow markers need dark outlines. Player-number badges disambiguate repeats.
 
-## Core screens and controls
+## Typography
 
-- Home: obvious New game action, empty-state guidance, and cards separating resumable games from finished results.
-- New game: compact name/color rows with add-player controls and a clear count up to 20.
-- Active game: ranked rows, persistent names and totals, signed whole-number score input, Save points, Undo last score, and a distinct Finish game action.
-- Finished game: read-only full standings and Play again. The finish podium shows all players in ranks 1–3, supporting tied groups; celebration is brief and dismissible.
+Plus Jakarta Sans (linked, system-stack fallback): display score 56/40px w800 (desktop/mobile), headline-lg 32/26px w700, headline-md 22px w700, body 16–18px w400, labels 12–16px w600 with letter-spaced small caps for section labels (LEADERBOARD, SCORE ENTRY). Score numerals are large, bold, and tabular. Icons use Material Symbols with inline-SVG or labeled-text fallback.
 
-## Responsive and accessibility guidance
+## Layout and core screens
 
-Use content-driven breakpoints: stack panels on narrow screens, place them side by side when space allows. Avoid horizontal page scrolling at a 320px viewport. Keep touch targets approximately 44px, preserve focus when standings reorder, and label every input. White/yellow markers need dark outlines; text contrast must be checked during implementation. Dialogs need keyboard focus management and a clear close control. Honor reduced motion by suppressing confetti.
+Top app bar on all screens: brand "Game night — Board-game scorekeeper" with token-color dots, segmented nav Dashboard / New Game / Active Game. Content-driven breakpoints; panels stack on narrow screens, sit side by side on wide. No horizontal scroll at 320px; touch targets ~44px.
 
-Decorations should frame the controls without crowding the leaderboard. Written product behavior is authoritative; exact mockup spacing and generated text are illustrative.
+- **Dashboard**: hero ("Keep score, stay in the game." + New game), two panels — Ongoing games (name, player count, updated recency, Resume) and Finished games (winner with rank, top score, View results). Purposeful empty states for both; the Active Game destination shows an empty state when nothing is in progress.
+- **New game**: "Who is playing?" with optional game title, player-count chip (n/20), numbered player rows with name input, Remove, and token-color pickers; Add player, Start game, Back. Sidebar explains table colors and shows setup helpers that exist in scope only (Reset list); rules: 2–20 players, names may repeat, blank names cannot start.
+- **Active game**: back link, title with In-progress badge; leaderboard (rank, number badge, token, name, total, Add points) plus distribution bar; score-entry panel with selected player, signed stepper, helper text, quick tap counters (+1/+5/+10/+25/−1/−5/−10), Save points, Undo last score, recent entries (player, signed amount, relative time), and a distinct Finish game action.
+- **Finished game**: read-only full standings, Play again. Podium modal shows ranks 1–3 with tied groups, brief dismissible confetti, and three actions: Play again, Close & view full standings, Save & exit to Dashboard.
 
-## Generation prompt
+## Accessibility baseline
 
-Use case: ui-mockup. Create one high-fidelity design concept board showing matching desktop and mobile responsive web-app scorekeeper screens side by side. Playful board-game aesthetic, warm ivory background, charcoal text, rounded cards, subtle paper texture, colorful small pawn/token icons, polished usable interface, ample whitespace, large readable numbers. Working title 'Game night'. Desktop main view: back link 'All games', title 'Friday game night', 'In progress' badge, 'Finish game' button. Leaderboard rows in descending order: blue token Alex 42, red token Sam 35, green token Jamie 28, yellow token Taylor 19. Each row has clear name, rank, total and 'Add points' button. Adjacent compact score-entry panel 'Add points' with selected player Alex, signed numeric input '+5', helper 'Use negative points for penalties', button 'Save points'. Small 'Undo last score' action. Mobile screen repeats same game and standings in compact readable stacked rows with touch-friendly controls, prominent Add points control. Colors available to players: blue, red, yellow, green, orange, white, black; white tokens have dark outlines. Names/icons distinguish repeated colors. Design must scale to a scrollable list of 20 players. No sign-in, account avatar, shared multiplayer, charts, round-completion buttons or unrelated features. Flat front-facing UI mockups, not perspective device photography. Label desktop and mobile outside the screens. This is a visual direction reference, not production code.
+Readable contrast on tinted surfaces; every icon-only control has a label; distribution bar never encodes meaning by color alone (pair with names/percentages); focus visible and preserved when the leaderboard reorders; dialogs manage focus with a clear close control; reduced motion suppresses confetti; the font-fallback stack keeps hierarchy and contrast intact offline.
+
+## Do's and don'ts
+
+- Do keep written behavior authoritative; mockup spacing, sample names, and decoration are illustrative.
+- Do treat quick counters, recent entries, and the distribution bar as views over existing score-change data — no parallel state.
+- Don't introduce Tailwind, an icon-font hard dependency, or any runtime beyond the static app.
+- Don't implement anything listed under "Mockup decoration — do not implement".
