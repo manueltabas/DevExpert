@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, and player-number flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, and score-distribution flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -46,6 +46,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
 - `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (immediate preset applies, staged stepper drafts, draft interaction, focus contract, storage identity).
 - `npm run test:browser:player-numbers`: run only the Chrome player-number badge checks (setup renumbering, badges across every roster surface, rank independence, resume/replay stability, corrupt-marker degradation).
+- `npm run test:browser:score-distribution`: run only the Chrome score-distribution checks (share math and rounding invariants, live re-derivation on save/undo/reorder, zero/negative treatment, surface exclusion, responsive and accessibility baseline).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -90,6 +91,25 @@ its own setup order. The number is a display aid only — it is never stored
 anew (saved games from before this feature keep their stored markers
 untouched) and old records with unusual or missing stored markers simply
 render their truthful positional number.
+
+Under the leaderboard rows, a **Score distribution** block shows who holds the
+points without mental math. Its header always renders — "Score distribution"
+beside "{N} total game points" (signed, so a penalties-heavy game honestly
+reads "-8 total game points") — while the stacked bar and its legend appear
+only when the game total is positive; at zero or below the block shows "No
+shares to show while the game total is zero or negative." instead. Every
+player with a positive total gets one bar segment in their token color and one
+legend entry reading "{name} {percent}%", in leaderboard order; percentages
+are whole numbers that always sum to exactly 100 (largest-remainder rounding —
+awkward splits like 2/2/2/1/1/1 render 23/22/22/11/11/11, never a 99 sum), and
+tiny shares that round to 0% keep their legend entry. Players with zero or
+negative totals hold no share and appear in neither bar nor legend (in
+mixed-sign games the shares are of the positive points only, so the bar's
+leader is always the leaderboard's rank 1), and the bar is decorative — the
+legend is real text, so color is never the only signal. The block is derived
+anew on every render from the current totals: saves, undoes, and reorders
+update it for free, nothing is stored, and it never appears on finished games,
+the podium, or the dashboard.
 
 Every game carries a display title the scorekeeper controls. The setup field
 is optional (up to 60 characters, trimmed once when the game starts): a titled
@@ -206,9 +226,9 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. The eleven MVP features and the v2
-`refresh-design-system`, `name-game-titles`, `track-game-activity`, and
-`add-quick-score-entry` features are accepted and merged;
-`show-player-numbers` is implemented and awaiting independent validation,
-followed by the remaining two v2 features (`show-score-distribution`,
-`extend-podium-actions`).
+Run `$feature-flow` one feature at a time. The eleven MVP features and the five
+previously merged v2 features (`refresh-design-system`, `name-game-titles`,
+`track-game-activity`, `add-quick-score-entry`, and `show-player-numbers`) are
+accepted and merged; `show-score-distribution` is implemented and awaiting
+independent validation, followed by the last v2 feature
+(`extend-podium-actions`).

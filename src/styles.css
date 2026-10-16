@@ -1603,3 +1603,100 @@ h3 {
     font-size: var(--text-label-sm);
   }
 }
+
+/* Score distribution block (show-score-distribution): a display-only
+   derivation under the active leaderboard rows — header always renders, the
+   bar + legend only while the game total is positive. Segment widths are the
+   integer percents exactly and legend text carries the numbers, so color is
+   never the only signal. Additive only: no existing selector, token,
+   breakpoint, or motion rule is modified. */
+.score-distribution {
+  margin-top: var(--space-md);
+  padding: 12px;
+  background: var(--surface-container);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.score-distribution-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: 10px;
+}
+
+.score-distribution-header .eyebrow {
+  margin: 0;
+}
+
+.score-distribution-total {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.score-distribution-bar {
+  display: flex;
+  overflow: hidden;
+  height: 10px;
+  background: var(--surface-container-high);
+  border-radius: var(--radius-full);
+}
+
+.score-distribution-segment {
+  display: block;
+  height: 100%;
+}
+
+/* Yellow and white segments would vanish against the light track; they carry
+   the established dark-outline treatment (the .marker border color) inside
+   their own box, so outlines never widen the bar. */
+.score-distribution-segment.marker-yellow,
+.score-distribution-segment.marker-white {
+  outline: 1px solid rgba(24, 28, 35, 0.38);
+  outline-offset: -1px;
+}
+
+.score-distribution-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.score-distribution-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.score-distribution-legend-item .marker {
+  width: 14px;
+  height: 14px;
+}
+
+.score-distribution-legend-text {
+  color: var(--text);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.score-distribution-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
 import { applyScoreChange } from "../src/score.js";
-import { podiumRows, rankPlayers } from "../src/standings.js";
+import { podiumRows, rankPlayers, scoreDistribution } from "../src/standings.js";
 
 // rankPlayers: null game and missing/empty player lists
 assert.deepEqual(rankPlayers(null), []);
@@ -221,4 +221,166 @@ assert.notEqual(podiumRows(podiumCutoffGame), podiumRows(podiumCutoffGame),
 assert.ok(!("rank" in podiumCutoffGame) && podiumCutoffGame.players.every((player) => !("rank" in player)),
   "podiumRows must not store rank fields");
 
-console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, podiumRows eligibility (ties never collapsed, rank-4 excluded), and read-only input handling.");
+// scoreDistribution: mockup parity — 42/35/28/19 of 124 rounds to 34/28/23/15
+// (floors 33/28/22/15 = 98; remainders .87/.23/.58/.32 top up Alex and Jamie).
+const mockupGame = {
+  players: [
+    { id: "mk-1", name: "Alex", order: 0, total: 42 },
+    { id: "mk-2", name: "Sam", order: 1, total: 35 },
+    { id: "mk-3", name: "Jamie", order: 2, total: 28 },
+    { id: "mk-4", name: "Taylor", order: 3, total: 19 }
+  ]
+};
+const mockupDistribution = scoreDistribution(mockupGame);
+assert.equal(mockupDistribution.gameTotal, 124);
+assert.deepEqual(
+  mockupDistribution.rows.map((row) => [row.player.id, row.percent]),
+  [["mk-1", 34], ["mk-2", 28], ["mk-3", 23], ["mk-4", 15]],
+  "the mockup totals must reproduce the largest-remainder shares in leaderboard order"
+);
+assert.equal(mockupDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100);
+assert.ok(mockupDistribution.rows.every((row) => row.player === mockupGame.players.find((player) => player.id === row.player.id)),
+  "distribution rows reference the original player objects");
+
+// scoreDistribution: the pinned naive-rounding counterexample — 2/2/2/1/1/1 of
+// 9 naively rounds to 99; largest remainder tops the tied .22 remainders in
+// display order and sums to exactly 100 (23/22/22/11/11/11).
+const halvesGame = {
+  players: [
+    { id: "h-1", name: "P1", order: 0, total: 2 },
+    { id: "h-2", name: "P2", order: 1, total: 2 },
+    { id: "h-3", name: "P3", order: 2, total: 2 },
+    { id: "h-4", name: "P4", order: 3, total: 1 },
+    { id: "h-5", name: "P5", order: 4, total: 1 },
+    { id: "h-6", name: "P6", order: 5, total: 1 }
+  ]
+};
+const halvesDistribution = scoreDistribution(halvesGame);
+assert.equal(halvesDistribution.gameTotal, 9);
+assert.deepEqual(
+  halvesDistribution.rows.map((row) => row.percent),
+  [23, 22, 22, 11, 11, 11],
+  "naive per-row rounding would give 99; the largest-remainder top-up must fix it"
+);
+assert.equal(halvesDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100);
+
+// scoreDistribution: full tie 1/1/1 of 3 tops the shared remainder up in
+// display order (34/33/33, never 33/34/33 or 33/33/34).
+const thirdsGame = {
+  players: [
+    { id: "t-1", name: "P1", order: 0, total: 1 },
+    { id: "t-2", name: "P2", order: 1, total: 1 },
+    { id: "t-3", name: "P3", order: 2, total: 1 }
+  ]
+};
+const thirdsDistribution = scoreDistribution(thirdsGame);
+assert.equal(thirdsDistribution.gameTotal, 3);
+assert.deepEqual(thirdsDistribution.rows.map((row) => row.percent), [34, 33, 33]);
+assert.equal(thirdsDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100);
+
+// scoreDistribution: mixed signs with a positive total — the negative player
+// is omitted, the denominator is the positive sum (13, not the signed total 8),
+// and the gameTotal stays signed for the honest caption.
+const mixedSignGame = {
+  players: [
+    { id: "ms-1", name: "Lead", order: 0, total: 10 },
+    { id: "ms-2", name: "Penalized", order: 1, total: -5 },
+    { id: "ms-3", name: "Third", order: 2, total: 3 }
+  ]
+};
+const mixedSignDistribution = scoreDistribution(mixedSignGame);
+assert.equal(mixedSignDistribution.gameTotal, 8);
+assert.deepEqual(
+  mixedSignDistribution.rows.map((row) => [row.player.id, row.percent]),
+  [["ms-1", 77], ["ms-3", 23]],
+  "only positive totals share the bar; 10/13 and 3/13 round to 77/23"
+);
+assert.equal(mixedSignDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100);
+
+// scoreDistribution: zero-total players are omitted while others scored
+// (10/0/5 of 15 -> 67/33, the zero player absent).
+const zeroPlayerGame = {
+  players: [
+    { id: "zp-1", name: "Scorer", order: 0, total: 10 },
+    { id: "zp-2", name: "Bench", order: 1, total: 0 },
+    { id: "zp-3", name: "Also", order: 2, total: 5 }
+  ]
+};
+const zeroPlayerDistribution = scoreDistribution(zeroPlayerGame);
+assert.equal(zeroPlayerDistribution.gameTotal, 15);
+assert.deepEqual(
+  zeroPlayerDistribution.rows.map((row) => [row.player.id, row.percent]),
+  [["zp-1", 67], ["zp-3", 33]],
+  "a zero-total player holds no share and is omitted"
+);
+
+// scoreDistribution: a positive-total player rounding to 0% keeps its row so
+// segments and legend stay 1:1 (1000/1 of 1001 -> 100 and 0).
+const tinyShareGame = {
+  players: [
+    { id: "ts-1", name: "Whale", order: 0, total: 1000 },
+    { id: "ts-2", name: "Minnow", order: 1, total: 1 }
+  ]
+};
+const tinyShareDistribution = scoreDistribution(tinyShareGame);
+assert.deepEqual(
+  tinyShareDistribution.rows.map((row) => [row.player.id, row.percent]),
+  [["ts-1", 100], ["ts-2", 0]],
+  "a positive-total player with a 0% share keeps its legend row and 0-width segment"
+);
+assert.equal(tinyShareDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100);
+
+// scoreDistribution: degenerate totals keep the (signed) caption but no rows.
+assert.deepEqual(scoreDistribution({ players: [{ id: "z1", name: "A", order: 0, total: 0 }, { id: "z2", name: "B", order: 1, total: 0 }] }),
+  { gameTotal: 0, rows: [] }, "an all-zero game has no shares to show");
+assert.deepEqual(scoreDistribution({ players: [{ id: "nz1", name: "A", order: 0, total: 5 }, { id: "nz2", name: "B", order: 1, total: -5 }] }),
+  { gameTotal: 0, rows: [] }, "a net-zero game has no shares to show");
+assert.deepEqual(scoreDistribution({ players: [{ id: "nn1", name: "A", order: 0, total: -5 }, { id: "nn2", name: "B", order: 1, total: -3 }] }),
+  { gameTotal: -8, rows: [] }, "a net-negative game keeps its signed caption with no rows");
+assert.deepEqual(scoreDistribution({ players: [] }), { gameTotal: 0, rows: [] });
+
+// scoreDistribution: guards mirror the playerNumbers precedent
+assert.deepEqual(scoreDistribution(null), { gameTotal: 0, rows: [] });
+assert.deepEqual(scoreDistribution(undefined), { gameTotal: 0, rows: [] });
+assert.deepEqual(scoreDistribution({}), { gameTotal: 0, rows: [] });
+assert.deepEqual(scoreDistribution({ players: "not-an-array" }), { gameTotal: 0, rows: [] });
+assert.deepEqual(
+  scoreDistribution({ players: [null, { id: "ok", name: "Ok", order: 1, total: 7 }] }),
+  { gameTotal: 7, rows: [{ player: { id: "ok", name: "Ok", order: 1, total: 7 }, percent: 100 }] },
+  "non-object player entries contribute 0 to the total and never join the shares"
+);
+
+// scoreDistribution: a 20-player positive game sums to exactly 100 in
+// leaderboard order with no lost player.
+const twentyPositiveGame = {
+  players: Array.from({ length: 20 }, (_, index) => ({
+    id: `dist-${index + 1}`,
+    name: `Player ${index + 1}`,
+    order: index,
+    total: 20 - index
+  }))
+};
+const twentyDistribution = scoreDistribution(twentyPositiveGame);
+assert.equal(twentyDistribution.gameTotal, 210);
+assert.equal(twentyDistribution.rows.length, 20);
+assert.equal(twentyDistribution.rows.reduce((sum, row) => sum + row.percent, 0), 100,
+  "the 20 displayed percentages must sum to exactly 100");
+const twentyPercents = twentyDistribution.rows.map((row) => row.percent);
+assert.deepEqual(twentyPercents, [...twentyPercents].sort((a, b) => b - a),
+  "shares follow descending-total order");
+assert.ok(twentyPercents.every((percent) => Number.isInteger(percent) && percent >= 0 && percent <= 100));
+
+// scoreDistribution: read-only derivation with fresh arrays and no written fields
+const beforeDistribution = structuredClone(mockupGame);
+scoreDistribution(mockupGame);
+assert.deepEqual(mockupGame, beforeDistribution, "scoreDistribution must never mutate the input game");
+assert.ok(mockupGame.players.every((player) => !("percent" in player) && !("share" in player)),
+  "players must not gain share fields");
+assert.ok(!("gameTotal" in mockupGame) && !("distribution" in mockupGame),
+  "the game must not gain distribution fields");
+assert.notEqual(scoreDistribution(mockupGame), scoreDistribution(mockupGame),
+  "scoreDistribution must return a fresh object on every call");
+assert.notEqual(scoreDistribution(mockupGame).rows, scoreDistribution(mockupGame).rows,
+  "the rows array must be fresh on every call");
+
+console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, podiumRows eligibility (ties never collapsed, rank-4 excluded), scoreDistribution largest-remainder shares (mockup 34/28/23/15, naive-rounding counterexample 23/22/22/11/11/11, tie top-up 34/33/33, mixed-sign positive-only shares, zero-total omission, 0% retention, degenerate/guard cases, sum-100 invariants), and read-only input handling.");

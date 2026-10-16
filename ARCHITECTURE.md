@@ -37,10 +37,24 @@ changes as `{ change, player }` pairs, newest first, skipping entries whose
 `src/standings.js` contains the pure ranking helpers
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
-creation-order ties, and `podiumRows(game)`, which filters that ranking to
-every row with rank ≤ 3 without collapsing ties or mutating its input.
-`src/main.js` calls both at render time only; no rank is stored on players,
-games, or the change log.
+creation-order ties, `podiumRows(game)`, which filters that ranking to
+every row with rank ≤ 3 without collapsing ties or mutating its input, and
+`scoreDistribution(game)`, the pure view behind the active leaderboard's score
+distribution block: it returns `{ gameTotal, rows }` where `gameTotal` is the
+signed sum of all finite player totals and `rows` lists one
+`{ player, percent }` pair per positive-total player in `rankPlayers` display
+order. Shares use the sum of positive totals as the denominator (never the
+signed game total, so percentages cannot exceed 100 even in mixed-sign games)
+and round by largest remainder (Hamilton) — floors first, then leftover units
+handed to the biggest fractional remainders with ties topped up in display
+order — so the displayed integers always sum to exactly 100. Zero and negative
+totals are omitted; a positive-total player rounding to 0% keeps its row so
+segments and legend stay 1:1; `rows` is empty whenever `gameTotal <= 0`;
+guards return `{ gameTotal: 0, rows: [] }` for non-object games and
+non-array players; the input is never mutated and each call returns a fresh
+array.
+`src/main.js` calls all three at render time only; no rank, share, or
+distribution field is stored on players, games, or the change log.
 
 `src/storage.js` contains the pure persistence helpers behind the single
 versioned storage key `scorekeeper:games`, which holds a
@@ -205,7 +219,8 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, game-title, game-activity, quick-score, and player-number flows.
+  design-system, game-title, game-activity, quick-score, player-number, and
+  score-distribution flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -225,10 +240,13 @@ persistence slice is implemented.
   that keeps the score field to plain signed-integer drafts, the quick tap
   counters and the signed stepper (a new UI entry into the existing score-save
   trigger, with the stepper staging the draft), the dashboard
-  cards' deterministic `Updated {token}` recency label, the display-only
-  Recent entries panel in the active score panel, and the player-number
-  badge wiring (each numbered surface derives `playerNumbers(game)` once per
-  render and threads the numbers into its row/card renderers).
+   cards' deterministic `Updated {token}` recency label, the display-only
+   Recent entries panel in the active score panel, the player-number
+   badge wiring (each numbered surface derives `playerNumbers(game)` once per
+   render and threads the numbers into its row/card renderers), and the
+   score-distribution block (the active leaderboard derives
+   `scoreDistribution(game)` once per render and emits the caption, bar, and
+   legend after the standings rows).
 - `src/roster.js`: roster limits, colors, validation, identities, and
   zero-score game creation with the trimmed optional title (`""` when blank
   or non-string) and the `MAX_TITLE_LENGTH` cap, plus the `playerNumbers`
@@ -240,8 +258,10 @@ persistence slice is implemented.
   log, and the `recentScoreChanges` panel view with `RECENT_ENTRIES_LIMIT`.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
-  plus the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
-  never collapsed).
+  the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
+  never collapsed), and the score-distribution derivation `scoreDistribution`
+  (positive-total rows in display order, largest-remainder integer percents
+  over the positive-total sum, signed `gameTotal`, guards, no mutation).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
   `active` to `finished` with `missing-game`/`already-finished` guards and no
   mutation or extra fields, the `replayGame` transition that turns a finished
@@ -365,6 +385,18 @@ persistence slice is implemented.
    truthful positional numbers with a byte-identical payload; and the
    320×720/1280×800 label/visibility/target/focus/overflow baseline — using
    isolated headless Chrome.
+- `scripts/browser-score-distribution-test.mjs`: desktop/mobile score-distribution
+   checks — the UI-scored happy path reproducing the mockup shares (42/35/28/19
+   → 34/28/23/15 of 124) with segment widths equal to legend percents (±1px) in
+   exact token colors, live re-derivation on save/undo/reorder/selection with
+   byte-identical payloads and unchanged stored player keys; seeded rounding
+   edges (2/2/2/1/1/1 → 23/22/22/11/11/11, 1/1/1 → 34/33/33), mixed-sign
+   positive-only shares (10/−5/3 → 77/23 under the signed "8" caption),
+   zero-player omission, and the degenerate all-zero/net-zero/negative captions
+   with the locked empty line; finished/podium/home/setup/active-empty
+   exclusion; and the 320×720/1280×800 overflow, legend-wrap, width↔percent,
+   zero-focusable, aria-hidden-bar, frozen-`--muted` AA-contrast, and
+   zero-console-error baseline — using isolated headless Chrome.
 
 ## Boundaries
 
@@ -502,3 +534,21 @@ untouched. The stored `marker` field stays written exactly as accepted
 it, so corrupt or missing stored markers degrade to the truthful positional
 number instead of surfacing "7" or "undefined"; nothing about the badge
 writes storage.
+
+Score distribution is a derived-only view over the same totals, never a
+stored shape. `scoreDistribution(game)` recomputes `{ gameTotal, rows }` on
+every render of the active leaderboard — saves, undoes, reorders, selection,
+resume, and reloads re-derive it for free with zero new save triggers, zero
+persisted fields, and byte-identical payloads across non-mutating renders —
+and only the active view's roster panel renders the block (finished games,
+the podium, home, setup, and the active-empty state render nothing). The
+caption ("Score distribution" + the signed "{N} total game points") always
+renders; the bar and legend render only while the game total is positive,
+sharing out the positive totals so the displayed integers always sum to
+exactly 100 and the bar's implicit leader is always the leaderboard's rank 1
+(never a penalized player promoted by absolute values). Segment widths are
+the integer percents exactly, legend text carries every eligible player's
+name and percent as real text beside an aria-hidden color dot, the bar is
+`aria-hidden`, and the block contains no focusable elements and no live
+region of its own — `#score-feedback` remains the sole announcer for saves
+and undoes.
