@@ -52,6 +52,11 @@ const state = {
   nextRowNumber: MIN_PLAYERS + 1
 };
 
+// Quick tap presets (add-quick-score-entry): the mockup's seven signed
+// amounts, locked as a local constant. Each tap applies immediately through
+// the ordinary score-save path — no new state, storage fields, or save trigger.
+const QUICK_SCORE_PRESETS = [1, 5, 10, 25, -1, -5, -10];
+
 const SCORE_ERROR_MESSAGES = {
   "empty": "Enter an amount first.",
   "not-a-number": "Enter a whole number, like 10 or -3.",
@@ -913,7 +918,19 @@ function bindPodiumEvents() {
     event.preventDefault();
     dismissPodium();
   });
-  dialog.addEventListener("close", handlePodiumClose);
+  dialog.addEventListener("close", () => {
+    // Chrome queues the dialog `close` event and can deliver it long after the
+    // dialog has left the DOM (the documented hidden-page task starvation).
+    // A close from a detached dialog is stale — two podiums in one document
+    // lifetime (finish → dismiss → replay → finish again) would otherwise let
+    // it clobber the new podium's open state and re-render without it. The
+    // live dialog's dismissal paths already funnel through handlePodiumClose
+    // synchronously; this listener stays a fallback for live-dialog closes.
+    if (!dialog.isConnected) {
+      return;
+    }
+    handlePodiumClose();
+  });
 
   if (state.podiumOpen) {
     if (!dialog.open) {
@@ -971,15 +988,53 @@ function renderScoreForm(player) {
       </p>
 
       <label class="field-label" for="score-amount">Points for ${escapeHtml(player.name)}</label>
-      <input id="score-amount" class="text-field score-amount-field" name="amount" type="number" step="1" min="${-MAX_SCORE_ABS}" max="${MAX_SCORE_ABS}" autocomplete="off" aria-describedby="score-help score-feedback">
+      <div class="score-stepper">
+        <button type="button" class="stepper-action" data-action="step-score-down" aria-label="Decrease points draft by 1 for ${escapeAttribute(player.name)}">-</button>
+        <input id="score-amount" class="text-field score-amount-field" name="amount" type="number" step="1" min="${-MAX_SCORE_ABS}" max="${MAX_SCORE_ABS}" autocomplete="off" aria-describedby="score-help score-feedback">
+        <button type="button" class="stepper-action" data-action="step-score-up" aria-label="Increase points draft by 1 for ${escapeAttribute(player.name)}">+</button>
+      </div>
 
       <p id="score-help" class="assistive-text">Use negative points for penalties. Whole numbers from ${-MAX_SCORE_ABS} to ${MAX_SCORE_ABS}.</p>
 
       <div id="score-feedback" class="form-feedback" aria-live="polite">${renderScoreFeedback()}</div>
 
+      ${renderQuickScores(player)}
+
       <button type="submit" class="primary-action">Save points</button>
       <button type="button" class="secondary-action" data-action="undo-last-score">Undo last score</button>
     </form>
+  `;
+}
+
+// Quick tap counters (add-quick-score-entry): the mockup's seven presets as
+// two rows (+ row then − row) inside one labelled group, rendered between the
+// polite feedback region and Save points. Every control is type="button" so a
+// tap can never submit the form; negative chips carry the soft-tint class.
+function renderQuickScores(player) {
+  const positiveRow = QUICK_SCORE_PRESETS.filter((amount) => amount > 0);
+  const negativeRow = QUICK_SCORE_PRESETS.filter((amount) => amount < 0);
+
+  return `
+    <div class="quick-scores" role="group" aria-label="Quick tap counters">
+      <p class="eyebrow quick-scores-eyebrow">Quick tap counters</p>
+      <div class="quick-scores-row">
+        ${positiveRow.map((amount) => renderQuickScoreButton(amount, player)).join("")}
+      </div>
+      <div class="quick-scores-row">
+        ${negativeRow.map((amount) => renderQuickScoreButton(amount, player)).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderQuickScoreButton(amount, player) {
+  // Accessible name carries the signed amount with correct pluralization for
+  // |n| = 1 ("Add -1 point to Alex"); the visible label keeps the ASCII sign.
+  const pointsWord = Math.abs(amount) === 1 ? "point" : "points";
+  const visibleLabel = amount > 0 ? `+${amount}` : `-${Math.abs(amount)}`;
+
+  return `
+    <button type="button" class="quick-score-action${amount < 0 ? " is-negative" : ""}" data-action="apply-quick-score" data-amount="${amount}" aria-label="Add ${amount} ${pointsWord} to ${escapeAttribute(player.name)}">${visibleLabel}</button>
   `;
 }
 
@@ -1125,6 +1180,22 @@ function bindActiveEvents() {
   appRoot.querySelector("[data-score-form]")?.addEventListener("submit", (event) => {
     event.preventDefault();
     handleScoreSubmit();
+  });
+
+  // Quick-entry controls (add-quick-score-entry), bound per render like
+  // select-player: counters carry their signed amount, the stepper nudges ±1.
+  appRoot.querySelectorAll("[data-action='apply-quick-score']").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleQuickScore(Number(button.dataset.amount));
+    });
+  });
+
+  appRoot.querySelector("[data-action='step-score-up']")?.addEventListener("click", () => {
+    stepScoreDraft(1);
+  });
+
+  appRoot.querySelector("[data-action='step-score-down']")?.addEventListener("click", () => {
+    stepScoreDraft(-1);
   });
 
   appRoot.querySelector("#score-amount")?.addEventListener("beforeinput", guardScoreEntryInput);
@@ -1294,18 +1365,21 @@ function handleTitleSave() {
   appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
+// The returned boolean exists so quick counters (add-quick-score-entry) can
+// share this exact path: true on success, false on every early rejection.
+// The typed-save focus contract is untouched.
 function handleScoreSubmit() {
   const input = appRoot.querySelector("#score-amount");
 
   if (!input) {
-    return;
+    return false;
   }
 
   const parsed = parseScoreAmount(input.value);
 
   if (parsed.error) {
     rejectScoreEntry(SCORE_ERROR_MESSAGES[parsed.error] ?? SCORE_ERROR_MESSAGES["not-a-number"]);
-    return;
+    return false;
   }
 
   const targetPlayer = state.activeGame?.players.find((player) => player.id === state.selectedPlayerId);
@@ -1317,7 +1391,7 @@ function handleScoreSubmit() {
 
   if (result.error || !result.game || !targetPlayer) {
     rejectScoreEntry(SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["unknown-player"]);
-    return;
+    return false;
   }
 
   const updatedPlayer = result.game.players.find((player) => player.id === state.selectedPlayerId);
@@ -1332,6 +1406,47 @@ function handleScoreSubmit() {
   render();
   paintStorageNotice();
   appRoot.querySelector("#score-amount")?.focus();
+  return true;
+}
+
+// Quick counter tap (add-quick-score-entry): one intent per control. The
+// preset overwrites any typed draft (never summed) and the apply rides the
+// unchanged save path — parse gate, persistActiveGameSnapshot (still six call
+// sites), exact accepted messages, undo, and recent-entries derivation. On
+// success focus returns to the pressed counter (matched by action + amount)
+// so repeated Enter keeps tapping it; rejections keep the accepted input focus.
+function handleQuickScore(amount) {
+  const input = appRoot.querySelector("#score-amount");
+
+  if (!input) {
+    return;
+  }
+
+  input.value = String(amount);
+  const saved = handleScoreSubmit();
+
+  if (saved) {
+    appRoot.querySelector(`[data-action='apply-quick-score'][data-amount='${amount}']`)?.focus();
+  }
+}
+
+// Stepper nudge (add-quick-score-entry): a pure draft edit on #score-amount.
+// The numeric reading of the trimmed draft starts from 0 when empty or
+// unparseable (a lone sign), the result is plain integer text clamped to
+// ±MAX_SCORE_ABS, and nothing else happens — no render, no feedback, no save,
+// so storage stays byte-identical across any number of steps.
+function stepScoreDraft(direction) {
+  const input = appRoot.querySelector("#score-amount");
+
+  if (!input) {
+    return;
+  }
+
+  const parsed = Number.parseInt(String(input.value).trim(), 10);
+  const baseline = Number.isFinite(parsed) ? parsed : 0;
+  const stepped = baseline + direction;
+  const clamped = Math.max(-MAX_SCORE_ABS, Math.min(MAX_SCORE_ABS, stepped));
+  input.value = String(clamped);
 }
 
 function handleUndo() {

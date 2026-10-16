@@ -201,7 +201,7 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, game-title, and game-activity flows.
+  design-system, game-title, game-activity, and quick-score flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -218,7 +218,9 @@ persistence slice is implemented.
   games list, the storage-health notices with the write-safety rule, the
   dismissible podium dialog with confetti, the inline active-header title
   edit form with its save trigger, the `beforeinput` entry guard
-  that keeps the score field to plain signed-integer drafts, the dashboard
+  that keeps the score field to plain signed-integer drafts, the quick tap
+  counters and the signed stepper (a new UI entry into the existing score-save
+  trigger, with the stepper staging the draft), the dashboard
   cards' deterministic `Updated {token}` recency label, and the display-only
   Recent entries panel in the active score panel.
 - `src/roster.js`: roster limits, colors, validation, identities, and
@@ -329,8 +331,21 @@ persistence slice is implemented.
   muted `—`, undo derivation with fresh `updatedAt` and byte-identical no-op
   undos, blocked-write undo with the unchanged notice, frozen finished stamps
   with no finished panel and a byte-identical replay original, and the
-  320×720/1280×800 overflow, focusable-count, frozen `--muted`, AA contrast,
-  and zero-console-error baseline — using isolated headless Chrome.
+   320×720/1280×800 overflow, focusable-count, frozen `--muted`, AA contrast,
+   and zero-console-error baseline — using isolated headless Chrome.
+- `scripts/browser-quick-score-test.mjs`: desktop/mobile quick-entry checks —
+   every preset counter applying immediately through the ordinary save path
+   with the exact accepted messages, cleared drafts, `Last:` context, envelope
+   version 1, and focus returned to the pressed counter; undo walking counter
+   changes back like any other change with a byte-identical no-op; the stepper
+   staging from a 0 baseline with plain-integer clamped output and
+   byte-identical no-save proof plus an ordinary stepped-draft save and the
+   exact zero message; counters discarding typed drafts without summing; the
+   ≥44px targets, Decision 6 accessible names, group label, Decision 6 tab
+   order, and real-key Enter repeat-press walk at 320×720 and 1280×800; and
+   blocked-write in-memory applies with the unchanged notice plus zero
+   counters/stepper in finished and active-empty views — using isolated
+   headless Chrome.
 
 ## Boundaries
 
@@ -355,6 +370,22 @@ scientific notation and other exact-integer non-plain text with the existing
 `not-a-number` message, so `1e3` (and equivalents) are unsavable through any
 path. No value is ever silently rewritten; a transient decimal such as `2.5`
 still reaches the save-side decimals message exactly as accepted.
+
+Quick entry is two input conveniences over the same path, never a second
+pipeline. The seven quick tap counters (a locked local preset list) overwrite
+the draft with their signed amount and call the unchanged `handleScoreSubmit`
+— which only gained a returned success boolean — so a tap passes the identical
+parse gate, persists through `persistActiveGameSnapshot()` (still exactly six
+call sites: a counter is a new UI entry into the score-save trigger, not a
+seventh trigger), and inherits every accepted message, the undo semantics, the
+recent-entries derivation, and the storage rules verbatim; on success focus
+returns to the pressed counter, on rejection the accepted input focus stays.
+The − / + stepper is a pure draft edit: it reads the numeric draft (0 baseline
+for empty or unparseable drafts — a `type="number"` input sanitizes transient
+shapes like `12.` or a lone sign to `""`), writes plain integer text clamped to
+±`MAX_SCORE_ABS`, and never saves, re-renders, or paints feedback, so the
+stored payload stays byte-identical across any number of steps; the stepped
+draft then saves as one ordinary change.
 
 Every successful game mutation (starting a game, saving points, a successful
 undo, confirming Finish game, renaming the active game, and replaying a
@@ -384,7 +415,11 @@ podium celebration sits on top of that finished view as a display-only modal:
 it opens only on a successful confirm-finish (including under storage
 failures), shows every rank ≤ 3 player with ties never collapsed, dismisses
 back to the heading without changing anything, and never reopens on a mere
-revisit.
+revisit. The `close`-event fallback listener ignores events delivered for a
+dialog that has already left the DOM: Chrome queues `close` as a task that can
+arrive late on hidden pages, and a stale event from a dismissed podium must
+never clobber a later podium's open state (finish → dismiss → replay → finish
+again).
 
 Replay closes the loop: the finished view's "Play again" control calls
 `replayGame`, which builds a brand-new active game through the roster path
