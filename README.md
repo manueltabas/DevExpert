@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, and game-title flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, and quick-score flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -44,6 +44,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
 - `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
 - `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
+- `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (immediate preset applies, staged stepper drafts, draft interaction, focus contract, storage identity).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -62,7 +63,16 @@ re-rank immediately; the confirmation names the player's new rank. The score
 field accepts plain signed integers only — letter characters such as `e`
 (scientific notation) are rejected as you type and can never be saved. Zero,
 decimals, out-of-range amounts, and non-plain forms like `1e3` are rejected
-with a clear message. Choose
+with a clear message. For fast scoring, a **− / +** stepper flanks the amount
+field: each press nudges the pending draft by 1 (starting from zero when the
+field is empty), clamps at the same ±1,000,000 bounds, and never saves by
+itself — choose **Save points** to apply the stepped draft. Beside the helper
+text, seven **quick tap counters** (+1, +5, +10, +25, −1, −5, −10) apply their
+signed amount to the selected player immediately, exactly as if the amount had
+been typed and saved: same validation, same confirmation message, same
+leaderboard re-rank, same storage rules, same undo — a mis-tap is one tap on
+**Undo last score**. Tapping a counter discards any typed draft rather than
+adding to it. Choose
 **Undo last score** to reverse the most recent change: the affected player's
 total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
@@ -185,8 +195,7 @@ notice automatically; there are no retry or dismiss buttons.
 ## Next steps
 
 Run `$feature-flow` one feature at a time. The eleven MVP features and the v2
-`refresh-design-system` and `name-game-titles` features are accepted and
-merged; `track-game-activity` is implemented and awaiting independent
-validation, followed by the remaining four v2 features
-(`add-quick-score-entry`, `show-player-numbers`, `show-score-distribution`,
-`extend-podium-actions`).
+`refresh-design-system`, `name-game-titles`, and `track-game-activity` features
+are accepted and merged; `add-quick-score-entry` is implemented and awaiting
+independent validation, followed by the remaining three v2 features
+(`show-player-numbers`, `show-score-distribution`, `extend-podium-actions`).

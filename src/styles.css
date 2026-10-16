@@ -950,6 +950,76 @@ h3 {
   font-variant-numeric: tabular-nums;
 }
 
+/* Quick tap counters + signed stepper (add-quick-score-entry): additive input
+   conveniences beside the custom amount field. The stepper stages the draft;
+   counters apply immediately through the ordinary score-save path. No existing
+   selector, token, breakpoint, or motion rule is modified. */
+.score-stepper {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+/* The 100%-width text field shares the stepper row and shrinks with it. */
+.score-stepper .score-amount-field {
+  flex: 1;
+  min-width: 0;
+}
+
+.stepper-action {
+  flex: 0 0 auto;
+  width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text);
+  background: var(--surface-container-high);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-md);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.quick-scores {
+  display: grid;
+  gap: 8px;
+}
+
+.quick-scores-eyebrow {
+  margin: 0;
+}
+
+.quick-scores-row {
+  display: flex;
+  gap: 8px;
+}
+
+.quick-score-action {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  font-size: var(--text-label-md);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+/* Negative chips get the soft-tint role (the selected-row token); the sign in
+   every visible label keeps color from ever being the only signal. */
+.quick-score-action.is-negative {
+  background: var(--primary-fixed);
+}
+
 .success-message {
   margin: 0;
   color: var(--success);

@@ -109,6 +109,23 @@
   `1e30` → out-of-range), and scientific notation such as `1e3` — superseding
   the documented add-player-score semantic-parse decision — is unsavable
   through any path.
+- Quick entry controls are input conveniences over the ordinary score-change
+  path, never a second pipeline and never new state or storage: the quick tap
+  counter preset set is locked to the mockup's seven (+1, +5, +10, +25, −1,
+  −5, −10), each tap applies immediately by overwriting the draft with the
+  preset (discarding any typed draft — never summing) and calling the
+  unchanged score-submit handler, so every tap passes the same parse gate,
+  persists through `persistActiveGameSnapshot()` (still exactly six call
+  sites — a counter is a new UI entry into the score-save trigger, not a
+  seventh trigger), and inherits the exact accepted messages, undo semantics,
+  recent-entries derivation, and storage rules; on success focus must return
+  to the pressed counter, and on rejection the accepted input focus is kept.
+  The − / + stepper must stage the draft and never save: it reads the numeric
+  draft with a 0 baseline for empty or unparseable drafts, writes plain
+  integer text clamped to ±1,000,000, and causes no save, no re-render, and
+  no feedback. Counter controls must never submit the form (`type="button"`)
+  and must expose their signed amount and the selected player's name in their
+  accessible names.
 - Leaderboard ranks are competition ranks derived at render time from player
   totals: `rank = 1 +` the number of strictly higher totals, so equal totals
   share a rank and the next position skips (12, 12, 8 → 1, 1, 3). Tied players
@@ -173,8 +190,11 @@
   `close` event alone: Chrome dispatches `close` asynchronously and can delay
   or starve it on hidden pages, so dismissal paths (Close control, Escape's
   `cancel`, backdrop click) must funnel through one synchronous idempotent
-  cleanup — with the `close` listener kept as a fallback — that restores the
-  underlying view and returns focus to it. Modal dialogs must be labelled and
+  cleanup — with the `close` listener kept as a fallback that must ignore
+  events delivered for a dialog that has already left the DOM (a stale close
+  from a dismissed dialog must never clobber a later dialog's open state) —
+  that restores the underlying view and returns focus to it. Modal dialogs
+  must be labelled and
   described (`aria-labelledby`/`aria-describedby`), open with focus inside,
   keep decorative layers `aria-hidden` and `pointer-events: none`, and any
   celebration animation must be CSS-only, finite (at most ~3.5s per piece),
