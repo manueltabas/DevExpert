@@ -222,6 +222,25 @@
   mutates the input game, never touches `game.status` or `player.order`, and
   never stores ranks. Undo survives reloads through the persisted change log;
   finishing, and replay slices must keep these rules.
+- Score distribution is display-only derived data, never persisted:
+  `scoreDistribution(game)` in `src/standings.js` computes shares from current
+  totals at render time (no persisted fields, no new save trigger, no
+  `src/storage.js` change), the block renders only in the active view's
+  leaderboard panel after the standings rows (never in finished views, the
+  podium, home, setup, or the active-empty state), and the caption
+  (`Score distribution` + the signed `{N} total game points`) must always
+  render so the block never disappears silently. The bar and legend render
+  only when the signed game total is positive; at zero or below they are
+  replaced by the locked line "No shares to show while the game total is zero
+  or negative." Shares belong to positive-total players only, with the sum of
+  positive totals as the denominator (never the signed game total, never
+  absolute values), rounded by largest remainder to integers that sum to
+  exactly 100; zero-total players are omitted while a positive-total player
+  rounding to 0% keeps its row so segments and legend stay exactly 1:1.
+  Segment widths are the integer percents exactly (no min-width), the legend
+  lists `{name} {percent}%` as real text so color is never the only signal,
+  the bar is `aria-hidden`, and the block must contain zero focusable
+  elements and no new live region.
 - The UI renders from the translated v2 token layer in `src/styles.css` only:
   screens are built with plain CSS custom properties (colors, type, radius,
   spacing, shadows) mapped from `docs/design/update-v2/warm_tactile_scorekeeper/DESIGN.md`,

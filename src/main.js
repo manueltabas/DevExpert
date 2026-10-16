@@ -20,7 +20,7 @@ import {
   recentScoreChanges,
   undoLastScoreChange
 } from "./score.js";
-import { podiumRows, rankPlayers } from "./standings.js";
+import { podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
 import { finishGame, displayGameTitle, formatRelativeTimestamp, renameGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
@@ -658,6 +658,11 @@ function renderActiveGame() {
   // Badge numbers derive once per surface render (show-player-numbers) and are
   // threaded into the row/card renderers; nothing here writes storage.
   const numbers = playerNumbers(game);
+  // The distribution block derives once per render from the current totals
+  // (show-score-distribution) — recomputed on every render of the active view,
+  // so saves, undos, and reorders re-derive it for free. Nothing is cached and
+  // nothing is persisted.
+  const distribution = scoreDistribution(game);
 
   appRoot.innerHTML = `
     <section class="active-layout" aria-labelledby="active-title">
@@ -688,6 +693,8 @@ function renderActiveGame() {
           <ol class="active-roster" aria-label="Active game players">
             ${rankPlayers(game).map((row) => renderActivePlayer(row.player, row.rank, row.player.id === state.selectedPlayerId, numbers.get(row.player.id))).join("")}
           </ol>
+
+          ${renderScoreDistribution(distribution)}
         </div>
       </div>
 
@@ -732,6 +739,67 @@ function renderTitleEditFeedback() {
   }
 
   return `<p class="${scoreFeedbackClassName(state.titleEditFeedback.kind)}">${escapeHtml(state.titleEditFeedback.message)}</p>`;
+}
+
+// Score distribution block (show-score-distribution): a display-only derivation
+// rendered inside the active view's leaderboard panel, immediately after the
+// standings rows. The header (eyebrow + signed "{N} total game points") always
+// renders so the block never disappears silently; the bar and legend render
+// only while the game total is positive, showing one segment and one legend
+// entry per positive-total player (zero-total players hold no share). There
+// are no interactive controls and no live region of its own — #score-feedback
+// already announces saves and undoes, and the block re-renders with the view.
+function renderScoreDistribution(distribution) {
+  const totalLine = `${distribution.gameTotal} total game points`;
+
+  if (distribution.rows.length === 0) {
+    return `
+      <div class="score-distribution" data-score-distribution>
+        <div class="score-distribution-header">
+          <p class="eyebrow">Score distribution</p>
+          <p class="score-distribution-total">${escapeHtml(totalLine)}</p>
+        </div>
+        <p class="score-distribution-empty">No shares to show while the game total is zero or negative.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="score-distribution" data-score-distribution>
+      <div class="score-distribution-header">
+        <p class="eyebrow">Score distribution</p>
+        <p class="score-distribution-total">${escapeHtml(totalLine)}</p>
+      </div>
+      <div class="score-distribution-bar" aria-hidden="true">
+        ${distribution.rows.map((row) => renderScoreDistributionSegment(row)).join("")}
+      </div>
+      <ul class="score-distribution-legend" aria-label="Score distribution">
+        ${distribution.rows.map((row) => renderScoreDistributionLegendItem(row)).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+// Segment width is the integer percent exactly (no min-width), so the rendered
+// geometry never disagrees with the legend numbers; the color classes reuse the
+// marker backgrounds so every segment is the player's exact token color.
+function renderScoreDistributionSegment(row) {
+  const color = getColor(row.player.color);
+
+  return `<span class="score-distribution-segment ${color.cssClass}" style="width:${row.percent}%"></span>`;
+}
+
+// The legend is the accessible representation: real text "{name} {percent}%"
+// beside an aria-hidden color dot — color is never the only signal.
+function renderScoreDistributionLegendItem(row) {
+  const color = getColor(row.player.color);
+
+  return `
+    <li class="score-distribution-legend-item">
+      <span class="marker ${color.cssClass}" aria-hidden="true"></span>
+      <span class="score-distribution-legend-text">${escapeHtml(row.player.name)} ${row.percent}%</span>
+    </li>
+  `;
 }
 
 // New Active Game destination empty state (locked copy from the spec). It is

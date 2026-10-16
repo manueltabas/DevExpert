@@ -87,6 +87,9 @@ node --check scripts/browser-quick-score-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-player-numbers-test.mjs'
 node --check scripts/browser-player-numbers-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-score-distribution-test.mjs'
+node --check scripts/browser-score-distribution-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 
