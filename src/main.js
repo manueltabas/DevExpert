@@ -929,7 +929,13 @@ function renderPodiumDialog(podium, game) {
         <h2 id="podium-title" class="podium-title">Final podium</h2>
         <p id="podium-lede" class="podium-lede">Congratulations to the top of the table.</p>
         <ol class="podium-groups" aria-label="Podium players">${groups}</ol>
-        <button type="button" class="primary-action podium-close" data-action="close-podium">Close</button>
+        <div class="podium-actions">
+          <button type="button" class="primary-action podium-play-again" data-action="podium-play-again">Play again (same players, reset scores)</button>
+          <div class="podium-actions-row">
+            <button type="button" class="secondary-action podium-close" data-action="close-podium">Close &amp; view full standings</button>
+            <button type="button" class="secondary-action podium-exit-dashboard" data-action="podium-exit-dashboard">Save &amp; exit to Dashboard</button>
+          </div>
+        </div>
       </div>
     </dialog>
   `;
@@ -988,6 +994,26 @@ function bindPodiumEvents() {
   };
 
   appRoot.querySelector("[data-action='close-podium']")?.addEventListener("click", dismissPodium);
+
+  // Podium actions (extend-podium-actions). Replay delegates to the unchanged
+  // handlePlayAgain after closing the live dialog; the queued `close` event
+  // this triggers is ignored by the detached-dialog guard below once the
+  // re-render replaces the dialog. Exit is pure navigation (no write).
+  appRoot.querySelector("[data-action='podium-play-again']")?.addEventListener("click", () => {
+    if (!state.podiumOpen) {
+      return;
+    }
+
+    if (dialog.open) {
+      dialog.close();
+    }
+    handlePlayAgain();
+  });
+
+  appRoot.querySelector("[data-action='podium-exit-dashboard']")?.addEventListener("click", () => {
+    handlePodiumExitDashboard();
+  });
+
   dialog.addEventListener("click", (event) => {
     if (event.target === dialog) {
       dismissPodium();
@@ -1027,6 +1053,36 @@ function handlePodiumClose() {
   state.podiumOpen = false;
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
+}
+
+// "Save & exit to Dashboard" (extend-podium-actions) is navigation only: the
+// game is already persisted by finishing, so this never writes — it dismisses
+// the live dialog and mirrors the accepted active-view back-home reset
+// verbatim, landing focus on the Dashboard heading. The queued `close` event
+// is ignored by the detached-dialog guard once render() replaces the dialog
+// (and handlePodiumClose would no-op anyway: podiumOpen is already false).
+function handlePodiumExitDashboard() {
+  if (!state.podiumOpen) {
+    return;
+  }
+
+  const dialog = appRoot.querySelector("[data-podium-dialog]");
+
+  if (dialog?.open) {
+    dialog.close();
+  }
+
+  state.view = "home";
+  state.selectedPlayerId = null;
+  state.scoreFeedback = null;
+  state.finishPromptOpen = false;
+  state.podiumOpen = false;
+  state.replayFeedback = null;
+  state.titleEditOpen = false;
+  state.titleDraft = "";
+  state.titleEditFeedback = null;
+  render();
+  appRoot.querySelector("[data-home-heading]")?.focus();
 }
 
 function renderFinishedPlayer(player, rank, playerNumber) {

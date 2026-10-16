@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/serve.mjs",
-    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:game && npm run test:storage && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo && npm run test:browser:resume && npm run test:browser:storage-failure && npm run test:browser:finish-game && npm run test:browser:podium && npm run test:browser:play-again && npm run test:browser:design-system && npm run test:browser:game-title && npm run test:browser:game-activity && npm run test:browser:quick-score && npm run test:browser:player-numbers && npm run test:browser:score-distribution",
+    "test": "npm run test:roster && npm run test:standings && npm run test:score && npm run test:game && npm run test:storage && npm run test:smoke && npm run test:browser && npm run test:browser:score && npm run test:browser:rank && npm run test:browser:undo && npm run test:browser:resume && npm run test:browser:storage-failure && npm run test:browser:finish-game && npm run test:browser:podium && npm run test:browser:play-again && npm run test:browser:design-system && npm run test:browser:game-title && npm run test:browser:game-activity && npm run test:browser:quick-score && npm run test:browser:player-numbers && npm run test:browser:score-distribution && npm run test:browser:podium-actions",
     "test:browser": "node scripts/browser-roster-test.mjs",
     "test:browser:design-system": "node scripts/browser-design-system-test.mjs",
     "test:browser:finish-game": "node scripts/browser-finish-game-test.mjs",
@@ -14,6 +14,7 @@
     "test:browser:play-again": "node scripts/browser-play-again-test.mjs",
     "test:browser:player-numbers": "node scripts/browser-player-numbers-test.mjs",
     "test:browser:podium": "node scripts/browser-podium-test.mjs",
+    "test:browser:podium-actions": "node scripts/browser-podium-actions-test.mjs",
     "test:browser:quick-score": "node scripts/browser-quick-score-test.mjs",
     "test:browser:rank": "node scripts/browser-rank-test.mjs",
     "test:browser:resume": "node scripts/browser-resume-test.mjs",

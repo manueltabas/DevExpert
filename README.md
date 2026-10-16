@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, and score-distribution flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, score-distribution, and podium-actions flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -40,6 +40,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:storage-failure`: run only the Chrome storage-failure feedback checks.
 - `npm run test:browser:finish-game`: run only the Chrome finish/read-only standings checks.
 - `npm run test:browser:podium`: run only the Chrome podium celebration checks.
+- `npm run test:browser:podium-actions`: run only the Chrome podium exit-action checks (three-action contract, close-path byte-identity, Dashboard-exit navigation, podium replay, and the two-podium stale-close guard).
 - `npm run test:browser:play-again`: run only the Chrome replay interaction checks.
 - `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
 - `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
@@ -190,11 +191,20 @@ are never collapsed (12, 12, 8 puts two players on the top step with no
 "Rank 2" group, and twenty tied players all appear in one scrolling group),
 while players outside the top three stay visible in the full standings
 behind the modal. A brief CSS confetti animation plays and is fully
-suppressed when the system prefers reduced motion. Dismiss with the **Close**
-button, **Escape**, or a click on the backdrop; focus returns to the game
-heading, the standings remain unchanged, and the celebration never repeats
-when the finished game is reopened or reloaded. The celebration is display
-only — it writes nothing and the saved game gains no new fields.
+suppressed when the system prefers reduced motion. The podium closes with one
+of three actions: the full-width primary **Play again (same players, reset
+scores)** replays right from the modal exactly like the finished view's
+button; below it sit **Close & view full standings** and **Save & exit to
+Dashboard** side by side, stacking full width on small screens. Dismiss with
+**Close & view full standings**, **Escape**, or a click on the backdrop;
+focus returns to the game heading, the standings remain unchanged, and the
+celebration never repeats when the finished game is reopened or reloaded.
+**Save & exit to Dashboard** is pure navigation: it dismisses the podium and
+opens the Dashboard with focus on its heading, listing the finished game
+under Finished games — it writes nothing. Opening the podium always focuses
+**Close & view full standings**, and Tab cycles the three actions without
+ever reaching the page behind the dialog. The celebration is display only —
+no podium action writes anything and the saved game gains no new fields.
 
 One more round is one click away: the finished view's **Play again** button,
 below the standings, creates a separate new active game from the finished
@@ -226,9 +236,11 @@ notice automatically; there are no retry or dismiss buttons.
 
 ## Next steps
 
-Run `$feature-flow` one feature at a time. The eleven MVP features and the five
-previously merged v2 features (`refresh-design-system`, `name-game-titles`,
-`track-game-activity`, `add-quick-score-entry`, and `show-player-numbers`) are
-accepted and merged; `show-score-distribution` is implemented and awaiting
-independent validation, followed by the last v2 feature
-(`extend-podium-actions`).
+Run `$feature-flow` one feature at a time. The eleven MVP features and the
+seven v2 features (`refresh-design-system`, `name-game-titles`,
+`track-game-activity`, `add-quick-score-entry`, `show-player-numbers`,
+`show-score-distribution`, and `extend-podium-actions`) cover the agreed v2
+set: the first six are accepted and merged, and `extend-podium-actions` is
+implemented and awaiting independent validation. Any further scope
+(rounds/timers, dashboard statistics, presets, roster reuse, one-tap games)
+needs a new agreed feature first.

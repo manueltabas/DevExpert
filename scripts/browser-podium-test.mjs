@@ -174,23 +174,10 @@ async function readPodiumState(cdp) {
   });
 }
 
-async function pressEnter(cdp) {
-  await cdp.send("Input.dispatchKeyEvent", {
-    type: "keyDown",
-    key: "Enter",
-    code: "Enter",
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13,
-    text: "\r"
-  });
-  await cdp.send("Input.dispatchKeyEvent", {
-    type: "keyUp",
-    key: "Enter",
-    code: "Enter",
-    windowsVirtualKeyCode: 13,
-    nativeVirtualKeyCode: 13
-  });
-}
+// The Enter helper was removed with the extend-podium-actions walk rewrite:
+// its only call site activated the single Close button in the old Tab walk,
+// and Enter-activates-the-dismiss-control is now covered by the focused
+// podium-actions suite.
 
 async function pressEscape(cdp) {
   await cdp.send("Input.dispatchKeyEvent", {
@@ -335,7 +322,10 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
   assert.equal(podium.firstTokenLabel, "Player 1, Blue",
     "podium tokens must speak the setup-order number label convention");
   assert.equal(podium.closePresent, true);
-  assert.equal(podium.closeLabel, "Close");
+  // Superseded by extend-podium-actions: the dismiss control's visible label
+  // (and accessible name) is now "Close & view full standings"; the
+  // close-podium hook and its accepted dismissal funnel are unchanged.
+  assert.equal(podium.closeLabel, "Close & view full standings");
   assert.equal(podium.focusOnClose, true, "opening the podium must move focus to the Close button");
   assert.equal(podium.focusInsideDialog, true);
   assert.deepEqual(podium.standingsNames, ["Alex", "Sam", "Jamie"],
@@ -514,8 +504,22 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
   assert.equal(reopened.podiumDialogPresent, false, "reopen must not re-celebrate the 20-tied game");
   assert.equal(reopened.names.length, 20);
 
-  // Scenario 7 at 320px: the native trap cycles Tab, Enter activates Close, and
-  // Escape dismisses back to the heading on a fresh podium.
+  // Scenario 7 at 320px: the native trap cycles Tab through the three podium
+  // actions (extend-podium-actions) without ever reaching a background control,
+  // and Escape dismisses to the heading from a cycled focus position.
+  // Superseded by extend-podium-actions: the podium now has three focusable
+  // actions in DOM order — Play again, Close & view full standings
+  // (close-podium), Save & exit to Dashboard — so the single-focusable
+  // `onClose || onBody` wrap assertion and the `recaptureState.onClose`
+  // recapture assertion no longer describe this dialog. The honest guarantees
+  // are: the no-wrap steps land exactly where DOM order says, the wrap from
+  // the last action follows the same documented Chrome quirk the
+  // single-focusable walk had to allow (first focusable or transient body
+  // rest), focus never reaches a background control, the dialog stays open,
+  // and the next Tab recaptures into the dialog. The Enter-on-Close step
+  // becomes Escape because the recapture's landing button is not
+  // deterministic; Enter-activates-the-dismiss-control at 320px stays covered
+  // by the focused podium-actions suite.
   await goHome(cdp);
   await createGame(cdp, "Mobile keys", ["Finn", "Gia"]);
   await finishGame(cdp);
@@ -524,51 +528,60 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
   assert.equal(mobileKeysPodium.open, true);
   assert.equal(mobileKeysPodium.focusOnClose, true);
 
-  await pressTab(cdp);
-  const trapState = await evaluate(cdp, () => {
+  const readTrapState = () => evaluate(cdp, () => {
     const dialog = document.querySelector("[data-podium-dialog]");
-    const close = document.querySelector("[data-action='close-podium']");
     const active = document.activeElement;
+    const style = active ? getComputedStyle(active) : null;
     return {
       dialogOpen: Boolean(dialog?.open),
-      onClose: Boolean(close && active === close),
+      focusAction: active?.dataset?.action ?? null,
       insideDialog: Boolean(dialog && active && dialog.contains(active)),
       onBody: active === document.body,
       backgroundControlFocused: Boolean(active && active !== document.body && !dialog.contains(active)),
-      outlineStyle: active ? getComputedStyle(active).outlineStyle : null,
-      outlineWidth: active ? getComputedStyle(active).outlineWidth : null
+      outlineStyle: style?.outlineStyle ?? null,
+      outlineWidth: style?.outlineWidth ?? null
     };
   });
-  assert.equal(trapState.dialogOpen, true, "Tab must keep the modal dialog open");
-  assert.equal(trapState.backgroundControlFocused, false,
-    "the native trap must never move focus to a control behind the dialog");
-  assert.ok(trapState.onClose || trapState.onBody,
-    "Tab from the dialog's only focusable control must wrap to it or transiently rest on body");
-  await pressTab(cdp);
-  const recaptureState = await evaluate(cdp, () => {
-    const dialog = document.querySelector("[data-podium-dialog]");
-    const close = document.querySelector("[data-action='close-podium']");
-    const style = getComputedStyle(document.activeElement);
-    return {
-      dialogOpen: Boolean(dialog?.open),
-      onClose: Boolean(close && document.activeElement === close),
-      outlineStyle: style.outlineStyle,
-      outlineWidth: style.outlineWidth
-    };
-  });
-  assert.equal(recaptureState.dialogOpen, true, "the dialog must stay open across the focus cycle");
-  assert.equal(recaptureState.onClose, true,
-    "the native trap must recapture focus into the dialog on the next Tab");
-  assert.notEqual(recaptureState.outlineStyle, "none", "keyboard focus must show a visible outline");
-  assert.notEqual(recaptureState.outlineWidth, "0px");
 
-  await pressEnter(cdp);
+  // Initial focus sits on the second focusable (close-podium), so the first
+  // Tab moves one step forward in DOM order with no wrap involved.
+  await pressTab(cdp);
+  const firstTabState = await readTrapState();
+  assert.equal(firstTabState.dialogOpen, true, "Tab must keep the modal dialog open");
+  assert.equal(firstTabState.backgroundControlFocused, false,
+    "the native trap must never move focus to a control behind the dialog");
+  assert.equal(firstTabState.insideDialog, true, "focus must stay inside the dialog");
+  assert.equal(firstTabState.focusAction, "podium-exit-dashboard",
+    "the first Tab must reach the third podium action in DOM order");
+
+  // The second Tab wraps from the last focusable — the documented Chrome
+  // quirk lets it reach the first action or transiently rest on body before
+  // the next Tab recaptures into the dialog.
+  await pressTab(cdp);
+  const secondTabState = await readTrapState();
+  assert.equal(secondTabState.dialogOpen, true);
+  assert.equal(secondTabState.backgroundControlFocused, false);
+  assert.ok(secondTabState.focusAction === "podium-play-again" || secondTabState.onBody,
+    "wrapping from the last action must reach the primary one or transiently rest on body");
+
+  await pressTab(cdp);
+  const thirdTabState = await readTrapState();
+  assert.equal(thirdTabState.dialogOpen, true, "the dialog must stay open across the focus cycle");
+  assert.equal(thirdTabState.backgroundControlFocused, false);
+  assert.equal(thirdTabState.insideDialog, true,
+    "the next Tab must recapture focus into the dialog");
+  assert.ok(thirdTabState.focusAction === "podium-play-again" || thirdTabState.focusAction === "close-podium",
+    "the recapture must land on one of the dialog's actions");
+  assert.notEqual(thirdTabState.outlineStyle, "none", "keyboard focus must show a visible outline");
+  assert.notEqual(thirdTabState.outlineWidth, "0px");
+
+  await pressEscape(cdp);
   await waitForAbsent(cdp, "[data-podium-dialog]");
 
-  const afterEnter = await readActiveState(cdp);
-  assert.equal(afterEnter.podiumDialogPresent, false, "Enter must activate Close and dismiss the podium");
-  assert.equal(afterEnter.focusOnHeading, true, "dismissal must return focus to the heading at 320px");
-  assert.equal(afterEnter.horizontalOverflow, false);
+  const afterEscapeCycle = await readActiveState(cdp);
+  assert.equal(afterEscapeCycle.podiumDialogPresent, false, "Escape must dismiss the podium after the Tab cycle");
+  assert.equal(afterEscapeCycle.focusOnHeading, true, "dismissal must return focus to the heading at 320px");
+  assert.equal(afterEscapeCycle.horizontalOverflow, false);
 
   await goHome(cdp);
   await createGame(cdp, "Mobile escape", ["Hana", "Ivan"]);
@@ -731,7 +744,7 @@ async function main() {
       setupSource: `localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, "not-json{");`
     });
 
-    console.log("Browser podium test passed: confirming finish opens a native dialog podium (aria-labelledby/aria-describedby) focused on Close; ranks 1,1,3 put both tied players on one step with no fabricated rank-2 group, both rank-2 players outrank the excluded rank-4 pair, and 20 tied players all appear in one scrolling rank-1 group at 1280x800 and 320x720 with no page-level overflow; Close, Escape, backdrop click, Space, and Enter each dismiss back to the heading with unchanged standings and no re-celebration on reopen; confetti is 14 deterministic aria-hidden pieces animating once (<=3.5s, forwards, ends at opacity 0) and computes display:none under emulated prefers-reduced-motion; the celebration opens under blocked writes and invalid-read suppression while stored payloads stay byte-identical with zero phantom cards, code-only warnings, and no uncaught console errors.");
+    console.log("Browser podium test passed: confirming finish opens a native dialog podium (aria-labelledby/aria-describedby) focused on the dismiss control — labeled 'Close & view full standings' since extend-podium-actions, which also added the Play-again primary and the Save-&-exit secondary around it; ranks 1,1,3 put both tied players on one step with no fabricated rank-2 group, both rank-2 players outrank the excluded rank-4 pair, and 20 tied players all appear in one scrolling rank-1 group at 1280x800 and 320x720 with no page-level overflow; the native trap walks the three podium actions without ever reaching background controls (the no-wrap steps land in DOM order, the wrap from the last action follows the documented Chrome first-focusable-or-transient-body quirk, and the next Tab recaptures into the dialog), and the dismiss control (click or Space), Escape (from the initial focus and after the Tab cycle), and backdrop click each dismiss back to the heading with unchanged standings and no re-celebration on reopen; confetti is 14 deterministic aria-hidden pieces animating once (<=3.5s, forwards, ends at opacity 0) and computes display:none under emulated prefers-reduced-motion; the celebration opens under blocked writes and invalid-read suppression while stored payloads stay byte-identical with zero phantom cards, code-only warnings, and no uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       tieScreenshots.podiumScreenshot,
       path.join(evidenceDir, "desktop-podium-20-tied.png"),
