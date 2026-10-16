@@ -16,7 +16,11 @@ Tailwind, no icon fonts, no build step. The one suite-frozen token value is
 `--muted: #6D655C`, kept because the undo suite asserts the info-feedback
 color `rgb(109, 101, 92)` exactly.
 State lives in memory in the browser module. `src/roster.js` contains pure
-roster validation and game creation helpers. `src/score.js` contains pure
+roster validation and game creation helpers plus the `playerNumbers(game)`
+display derivation: a `Map` keyed by `player.id` → the player's 1-based
+position in `game.players` (the setup order), with guards returning an empty
+`Map` for non-object games and non-array players and non-object player
+entries skipped without consuming a position. `src/score.js` contains pure
 scoring helpers: signed integer parsing restricted to plain signed integer
 text — `parseScoreAmount` runs a final plain-format gate after the
 finite/integer/zero/range checks, so exact-integer non-plain text such as
@@ -201,7 +205,7 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, game-title, game-activity, and quick-score flows.
+  design-system, game-title, game-activity, quick-score, and player-number flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -221,11 +225,14 @@ persistence slice is implemented.
   that keeps the score field to plain signed-integer drafts, the quick tap
   counters and the signed stepper (a new UI entry into the existing score-save
   trigger, with the stepper staging the draft), the dashboard
-  cards' deterministic `Updated {token}` recency label, and the display-only
-  Recent entries panel in the active score panel.
+  cards' deterministic `Updated {token}` recency label, the display-only
+  Recent entries panel in the active score panel, and the player-number
+  badge wiring (each numbered surface derives `playerNumbers(game)` once per
+  render and threads the numbers into its row/card renderers).
 - `src/roster.js`: roster limits, colors, validation, identities, and
   zero-score game creation with the trimmed optional title (`""` when blank
-  or non-string) and the `MAX_TITLE_LENGTH` cap.
+  or non-string) and the `MAX_TITLE_LENGTH` cap, plus the `playerNumbers`
+  positional badge derivation (pure, id-keyed, render-time only).
 - `src/score.js`: score-change bounds, plain signed integer parsing (the
   `isPlainScoreDraft` entry pattern and the final plain-format gate in
   `parseScoreAmount`), safe-integer guarded application, per-change `at`
@@ -346,6 +353,18 @@ persistence slice is implemented.
    blocked-write in-memory applies with the unchanged notice plus zero
    counters/stepper in finished and active-empty views — using isolated
    headless Chrome.
+- `scripts/browser-player-numbers-test.mjs`: desktop/mobile player-number
+   badge checks — positional setup rows that renumber on removal with the
+   accepted positional labels; badges 1..N in setup order on the leaderboard,
+   score card (token, name, and the visible muted `Player {n}` subtitle),
+   recent entries, podium, and finished standings; rank/badge independence
+   (12/12/8 → ranks 1,1,3 with badges 1,2,3, and a reordering save moving rows
+   while badges follow players); reload/resume stability and 1..N replay
+   renumbering with the stored marker field still written exactly as
+   accepted; a seeded `marker: "7"` record and a missing marker degrading to
+   truthful positional numbers with a byte-identical payload; and the
+   320×720/1280×800 label/visibility/target/focus/overflow baseline — using
+   isolated headless Chrome.
 
 ## Boundaries
 
@@ -468,3 +487,18 @@ entries without `at` keep working and render a muted `—`. All recency
 rendering funnels through `formatRelativeTimestamp` (no locale APIs), and
 the Recent entries panel is pure display over `recentScoreChanges` — capped,
 newest first, zero interactive controls, no extra live region.
+
+Player numbers are a pure display derivation, never identity or a scoring
+input. `playerNumbers(game)` maps each `player.id` to the player's 1-based
+position in `game.players` (the setup order — stable for the game's life,
+since no accepted code path reorders the roster after game start), and every
+numbered surface derives the map once per render and threads numbers into
+its renderers: leaderboard rows, the finished standings, the podium, the
+recent-entries rows, and the score-entry card (which additionally shows the
+visible muted `Player {n}` subtitle beside the name). Badges never replace
+rank digits, and the frozen `{name}: rank {rank}, total {total}` labels are
+untouched. The stored `marker` field stays written exactly as accepted
+(`createGame` and `replayGame` are untouched) but renderers no longer read
+it, so corrupt or missing stored markers degrade to the truthful positional
+number instead of surfacing "7" or "undefined"; nothing about the badge
+writes storage.

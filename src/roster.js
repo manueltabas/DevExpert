@@ -96,3 +96,28 @@ export function createGame({ title, rows, now = new Date(), idSeed = "game" }) {
     validation
   };
 }
+
+// Player number badges (show-player-numbers): the badge number of a player is
+// their 1-based position in `game.players` — the setup order — derived at
+// render time and never persisted anew (the stored `marker` field stays
+// written exactly as accepted but renderers no longer read it). Position
+// equals setup order and stays stable for the game's life: after game start no
+// accepted code path reorders, splices, or filters `game.players`, so badges
+// survive resume and reload, pre-start removal renumbers the draft rows, and
+// replay renumbers from the replay's setup order by construction. Keyed by
+// `player.id` because ranked rows and recent-entry pairs must both resolve
+// their number regardless of how the row references the player. Guards return
+// an empty Map for non-object games and non-array players; the input is never
+// mutated.
+export function playerNumbers(game) {
+  const numbers = new Map();
+  const players = Array.isArray(game?.players) ? game.players : [];
+
+  players.forEach((player, index) => {
+    if (player && typeof player === "object") {
+      numbers.set(player.id, index + 1);
+    }
+  });
+
+  return numbers;
+}

@@ -329,8 +329,11 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
     "podium totals must keep the accepted label convention");
   assert.deepEqual(podium.groups[1].names, ["Jamie"]);
   assert.deepEqual(podium.groups[1].totalLabels, ["Jamie: rank 3, total 8"]);
-  assert.equal(podium.firstTokenLabel, "Player marker 1, Blue",
-    "podium tokens must reuse the marker label convention");
+  // Superseded by show-player-numbers: token labels now speak the derived
+  // setup-order badge ("Player {n}, {color}") instead of the MVP-era
+  // "Player marker" wording; the frozen total labels below are untouched.
+  assert.equal(podium.firstTokenLabel, "Player 1, Blue",
+    "podium tokens must speak the setup-order number label convention");
   assert.equal(podium.closePresent, true);
   assert.equal(podium.closeLabel, "Close");
   assert.equal(podium.focusOnClose, true, "opening the podium must move focus to the Close button");

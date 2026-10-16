@@ -396,7 +396,9 @@ async function runEntriesOrderAndLast(cdp, { consoleProblems }) {
     "entries render newest first with signed amounts and relative times"
   );
   assert.equal(scoredPanel.rows[0].amountIsPositive, true);
-  assert.equal(scoredPanel.rows[1].tokenLabel, "Player marker 1, Blue", "tokens reuse the accepted marker aria-label convention");
+  // Superseded by show-player-numbers: the token label now carries the derived
+  // setup-order badge ("Player 1, Blue") instead of the "Player marker" wording.
+  assert.equal(scoredPanel.rows[1].tokenLabel, "Player 1, Blue", "tokens reuse the accepted numbered-token aria-label convention");
   assert.equal(scoredPanel.focusableCount, 0);
 
   const placement = await readPlacement(cdp);

@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, and quick-score flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, and player-number flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -45,6 +45,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
 - `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
 - `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (immediate preset applies, staged stepper drafts, draft interaction, focus contract, storage identity).
+- `npm run test:browser:player-numbers`: run only the Chrome player-number badge checks (setup renumbering, badges across every roster surface, rank independence, resume/replay stability, corrupt-marker degradation).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -77,7 +78,18 @@ adding to it. Choose
 total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
 announces "Nothing to undo yet." without changing anything. Names and
-colors can repeat; numbered markers distinguish players.
+colors can repeat; every player carries a **number badge (1–N) assigned in
+setup order** so repeated names or colors stay distinguishable at a glance.
+The badge shows on the setup rows, the leaderboard, the score-entry card
+(beside the name, with a small "Player 3"-style subtitle), the recent-entries
+rows, the podium, and the final standings — always next to, never instead of,
+the rank digit. Removing a setup row renumbers the remaining rows before the
+game starts; after the game starts the numbers follow the roster order for
+the game's life, survive reloads, and a **Play again** rematch renumbers from
+its own setup order. The number is a display aid only — it is never stored
+anew (saved games from before this feature keep their stored markers
+untouched) and old records with unusual or missing stored markers simply
+render their truthful positional number.
 
 Every game carries a display title the scorekeeper controls. The setup field
 is optional (up to 60 characters, trimmed once when the game starts): a titled
@@ -195,7 +207,8 @@ notice automatically; there are no retry or dismiss buttons.
 ## Next steps
 
 Run `$feature-flow` one feature at a time. The eleven MVP features and the v2
-`refresh-design-system`, `name-game-titles`, and `track-game-activity` features
-are accepted and merged; `add-quick-score-entry` is implemented and awaiting
-independent validation, followed by the remaining three v2 features
-(`show-player-numbers`, `show-score-distribution`, `extend-podium-actions`).
+`refresh-design-system`, `name-game-titles`, `track-game-activity`, and
+`add-quick-score-entry` features are accepted and merged;
+`show-player-numbers` is implemented and awaiting independent validation,
+followed by the remaining two v2 features (`show-score-distribution`,
+`extend-podium-actions`).

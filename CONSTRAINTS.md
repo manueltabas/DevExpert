@@ -35,6 +35,21 @@
   never copied.
 - Use blue, red, yellow, green, orange, white, or black markers. Duplicate names
   and colors are allowed; player IDs must be independent of both.
+- Player number badges are a render-time display aid, never identity, never a
+  scoring input, and never persisted anew: `playerNumbers(game)` in
+  `src/roster.js` derives each badge from the player's 1-based position in
+  `game.players` (the setup order, stable for the game's life) as an
+  id-keyed `Map` built once per surface render, and no code path may store a
+  badge number, reorder the roster to change badges, or add a save trigger.
+  Badges must never replace or reposition rank digits, and the frozen
+  `{name}: rank {rank}, total {total}` total labels stay rank-bearing. The
+  stored `marker` field stays written exactly as accepted (by `createGame`
+  and `replayGame`) but is presentation-unused: renderers must derive badges
+  positionally so corrupt or missing stored markers degrade to the truthful
+  number. Setup rows stay positional (removal renumbers the remaining
+  draft), and every numbered token's accessible name reads
+  `Player {n}, {color}` with the visible name kept beside the badge; home
+  cards keep their unnumbered aria-hidden color dots.
 - Every new player starts at zero.
 - Game mutations persist to the browser's local storage under the single
   versioned key `scorekeeper:games` as a `{ version: 1, games: [...] }`
