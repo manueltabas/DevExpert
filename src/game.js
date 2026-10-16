@@ -52,6 +52,51 @@ export function displayGameTitle(game) {
   return stamp ? `Game — ${stamp}` : "Game";
 }
 
+const MINUTE_MS = 60_000;
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+const WEEK_MS = 7 * DAY_MS;
+
+// Deterministic relative-time token for activity stamps (track-game-activity),
+// anchored to an injectable `now` so tests can seed exact ages: < 1 minute
+// ("just now", covering clock skew where the stamp lies in the future), then
+// floored minutes/hours/days up to a week, then the same absolute
+// `d MMM, HH:mm` local-time stamp the title auto-label uses. Non-string and
+// unparseable input returns null so callers pick their own fallback. No
+// locale-dependent formatting anywhere — minutes-based Date math is
+// timezone-independent and the absolute branch reuses formatTitleStamp.
+export function formatRelativeTimestamp(value, now = new Date()) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const stamp = new Date(value);
+
+  if (Number.isNaN(stamp.getTime())) {
+    return null;
+  }
+
+  const diff = now.getTime() - stamp.getTime();
+
+  if (diff < MINUTE_MS) {
+    return "just now";
+  }
+
+  if (diff < HOUR_MS) {
+    return `${Math.floor(diff / MINUTE_MS)}m ago`;
+  }
+
+  if (diff < DAY_MS) {
+    return `${Math.floor(diff / HOUR_MS)}h ago`;
+  }
+
+  if (diff < WEEK_MS) {
+    return `${Math.floor(diff / DAY_MS)}d ago`;
+  }
+
+  return formatTitleStamp(value);
+}
+
 // The one-way game lifecycle transition: active -> finished. `now` is part of
 // the transition signature but deliberately unused — no timestamp is stored
 // beyond `status` (no `finishedAt`, no ranks, no other new fields).

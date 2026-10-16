@@ -16,10 +16,11 @@ import {
   applyScoreChange,
   isPlainScoreDraft,
   parseScoreAmount,
+  recentScoreChanges,
   undoLastScoreChange
 } from "./score.js";
 import { podiumRows, rankPlayers } from "./standings.js";
-import { finishGame, displayGameTitle, renameGame, replayGame } from "./game.js";
+import { finishGame, displayGameTitle, formatRelativeTimestamp, renameGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
   orderSavedGamesForDisplay,
@@ -412,24 +413,18 @@ function renderFinishedGameCard(game) {
   `;
 }
 
+// Card recency label (track-game-activity): the storage-owned `updatedAt`
+// first, then `createdAt`, each rendered through the deterministic relative
+// formatter ("Updated just now" / "Updated 10m ago" / "Updated 12 Oct, 21:08").
+// When neither stamp parses, the bare "Updated" fallback stays, matching the
+// accepted `/^Updated /` card contract.
 function formatSavedGameUpdated(game) {
   for (const candidate of [game?.updatedAt, game?.createdAt]) {
-    if (typeof candidate !== "string" || candidate.trim() === "") {
-      continue;
+    const token = formatRelativeTimestamp(candidate);
+
+    if (token) {
+      return `Updated ${token}`;
     }
-
-    const parsed = new Date(candidate);
-
-    if (Number.isNaN(parsed.getTime())) {
-      continue;
-    }
-
-    return `Updated ${parsed.toLocaleString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit"
-    })}`;
   }
 
   return "Updated";
@@ -695,6 +690,7 @@ function renderActiveGame() {
           </div>
         </div>
         ${selectedPlayer ? renderScoreForm(selectedPlayer) : ""}
+        ${renderRecentEntries(game)}
         ${renderFinishSection()}
       </aside>
     </section>
@@ -993,6 +989,70 @@ function renderScoreFeedback() {
   }
 
   return `<p class="${scoreFeedbackClassName(state.scoreFeedback.kind)}">${escapeHtml(state.scoreFeedback.message)}</p>`;
+}
+
+// Recent entries panel (track-game-activity): a display-only view over the
+// stored change sequence, rendered inside the active view's score panel
+// between the score form and the finish section. Newest first, capped by
+// recentScoreChanges, with the `Last: {name} {signedAmount}` header as undo
+// context. There are no interactive controls and no live region of its own —
+// #score-feedback already announces saves and undoes. Undo derives for free:
+// the popped change simply stops rendering and the header recomputes.
+function renderRecentEntries(game) {
+  const entries = recentScoreChanges({ game });
+
+  if (entries.length === 0) {
+    return `
+      <div class="recent-entries" data-recent-entries>
+        <p class="recent-entries-empty">No score changes yet.</p>
+      </div>
+    `;
+  }
+
+  const latest = entries[0];
+
+  return `
+    <div class="recent-entries" data-recent-entries>
+      <div class="recent-entries-header">
+        <p class="eyebrow">Recent entries</p>
+        <p class="recent-entries-last">Last: ${escapeHtml(latest.player.name)} ${escapeHtml(signedScoreAmount(latest.change.amount))}</p>
+      </div>
+      <ul class="recent-entries-list" aria-label="Recent entries">
+        ${entries.map((entry) => renderRecentEntry(entry)).join("")}
+      </ul>
+    </div>
+  `;
+}
+
+function renderRecentEntry({ change, player }) {
+  const color = getColor(player.color);
+  const timeToken = formatRelativeTimestamp(change?.at);
+
+  return `
+    <li class="recent-entry">
+      <span class="player-token ${color.cssClass}" aria-label="Player marker ${escapeAttribute(player.marker)}, ${escapeAttribute(color.label)}">${escapeHtml(player.marker)}</span>
+      <span class="recent-entry-name">${escapeHtml(player.name)}</span>
+      <span class="recent-entry-amount ${change.amount > 0 ? "is-positive" : "is-negative"}">${escapeHtml(signedScoreAmount(change.amount))} pts</span>
+      <span class="recent-entry-time">${escapeHtml(recentEntryTimeText(timeToken))}</span>
+    </li>
+  `;
+}
+
+// Display helper: positive amounts carry an explicit `+` (zero is impossible —
+// parseScoreAmount rejects it — but a plain "0" keeps the helper total).
+function signedScoreAmount(amount) {
+  return amount > 0 ? `+${amount}` : String(amount);
+}
+
+// Entry time cells use the relative token with an initial capital
+// ("Just now"); entries without a parseable `at` (pre-feature or corrupt)
+// degrade to a muted em dash instead of dropping the row.
+function recentEntryTimeText(timeToken) {
+  if (!timeToken) {
+    return "—";
+  }
+
+  return `${timeToken.charAt(0).toUpperCase()}${timeToken.slice(1)}`;
 }
 
 function renderReplayFeedback() {

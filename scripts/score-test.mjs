@@ -2,15 +2,18 @@ import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
 import {
   MAX_SCORE_ABS,
+  RECENT_ENTRIES_LIMIT,
   SCORE_ERROR_CODES,
   applyScoreChange,
   isPlainIntegerText,
   isPlainScoreDraft,
   parseScoreAmount,
+  recentScoreChanges,
   undoLastScoreChange
 } from "../src/score.js";
 
 assert.equal(MAX_SCORE_ABS, 1_000_000);
+assert.equal(RECENT_ENTRIES_LIMIT, 8);
 
 // parseScoreAmount: empty values
 assert.deepEqual(parseScoreAmount(""), { error: "empty" });
@@ -131,6 +134,28 @@ assert.equal(samScored.game.changes.length, 3);
 // applyScoreChange: change ids stay unique across entries
 assert.equal(new Set(samScored.game.changes.map((change) => change.id)).size, 3);
 
+// applyScoreChange: the injectable clock stamps each new change with an `at`
+// ISO string so per-entry relative times survive reloads (track-game-activity)
+const stampedNow = new Date("2026-10-15T12:30:45.123Z");
+const stamped = applyScoreChange({ game, playerId: game.players[0].id, amount: 4, now: stampedNow });
+assert.equal(stamped.error, null);
+assert.equal(stamped.game.changes[0].at, "2026-10-15T12:30:45.123Z");
+assert.equal(typeof stamped.game.changes[0].at, "string");
+assert.notEqual(new Date(stamped.game.changes[0].at).getTime(), Number.NaN, "`at` must parse as an instant");
+// Two entries from the same injected `now` share that stamp; the default
+// clock stamps approximately the current time.
+const stampedTwice = applyScoreChange({ game: stamped.game, playerId: game.players[1].id, amount: 2, now: stampedNow });
+assert.equal(stampedTwice.game.changes[1].at, "2026-10-15T12:30:45.123Z");
+const defaultClock = applyScoreChange({ game: stampedTwice.game, playerId: game.players[0].id, amount: 1 });
+assert.equal(Number.isNaN(new Date(defaultClock.game.changes[2].at).getTime()), false);
+assert.ok(
+  Math.abs(new Date(defaultClock.game.changes[2].at).getTime() - Date.now()) < 60_000,
+  "the default clock must stamp approximately now"
+);
+// Rejected changes still create no entry (and so no `at`).
+assert.equal(applyScoreChange({ game: stamped.game, playerId: game.players[0].id, amount: 0, now: stampedNow }).error, "zero");
+assert.equal(stamped.game.changes.length, 1);
+
 // applyScoreChange: negative totals are valid
 const backToZero = applyScoreChange({ game: samScored.game, playerId: game.players[1].id, amount: -5 });
 assert.equal(backToZero.game.players[1].total, 0);
@@ -208,7 +233,9 @@ assert.deepEqual(samScored.game, undoSnapshot, "the input game must never be mut
 // undoLastScoreChange: no rank fields are written anywhere
 assert.ok(undoLatest.game.players.every((player) => !("rank" in player)));
 for (const change of undoLatest.game.changes) {
-  assert.deepEqual(Object.keys(change).sort(), ["amount", "id", "playerId"]);
+  // Superseded by track-game-activity: new change entries carry an `at` ISO
+  // stamp from the injectable clock, so the persisted key list gains "at".
+  assert.deepEqual(Object.keys(change).sort(), ["amount", "at", "id", "playerId"]);
 }
 
 // undoLastScoreChange: repeated undo drains the log in reverse order, then reports nothing-to-undo
@@ -254,4 +281,73 @@ const unsafeUndoGame = {
 };
 assert.equal(undoLastScoreChange({ game: unsafeUndoGame }).error, "not-safe");
 
-console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, change log, safe-integer guard, immutability, and latest-change undo.");
+// recentScoreChanges: newest-first { change, player } pairs over the stored log
+// (track-game-activity). Player ids come from the seeded createGame above.
+const alexId = game.players[0].id;
+const samId = game.players[1].id;
+const recentLogGame = {
+  ...game,
+  changes: [
+    { id: "c-1", playerId: alexId, amount: 1, at: "2026-10-01T10:00:00.000Z" },
+    { id: "c-2", playerId: samId, amount: -2, at: "2026-10-02T10:00:00.000Z" },
+    { id: "c-3", playerId: "ghost-player", amount: 9, at: "2026-10-03T10:00:00.000Z" },
+    { id: "c-4", playerId: alexId, amount: 3, at: "2026-10-04T10:00:00.000Z" }
+  ]
+};
+const recentLogSnapshot = structuredClone(recentLogGame);
+const recent = recentScoreChanges({ game: recentLogGame });
+assert.deepEqual(
+  recent.map((entry) => entry.change.id),
+  ["c-4", "c-2", "c-1"],
+  "entries render newest first and unresolvable players are skipped"
+);
+assert.deepEqual(
+  recent.map((entry) => entry.player.id),
+  [alexId, samId, alexId],
+  "each entry carries its resolved player"
+);
+assert.equal(recent[0].change.amount, 3);
+assert.deepEqual(recentLogGame, recentLogSnapshot, "the input game must never be mutated");
+assert.notEqual(recent, recentLogGame.changes, "the returned list must be a fresh array");
+
+// recentScoreChanges: the cap keeps the newest entries and skips do not count
+// toward it; the limit is overridable.
+const capLog = Array.from({ length: 12 }, (_, index) => ({
+  id: `cap-${index + 1}`,
+  playerId: alexId,
+  amount: index + 1,
+  at: `2026-10-${String((index % 28) + 1).padStart(2, "0")}T10:00:00.000Z`
+}));
+const cappedGame = { ...game, changes: [...capLog, { id: "cap-ghost", playerId: "ghost", amount: 5 }] };
+const capped = recentScoreChanges({ game: cappedGame });
+assert.equal(capped.length, RECENT_ENTRIES_LIMIT);
+assert.deepEqual(capped.map((entry) => entry.change.id), capLog.slice(4).map((change) => change.id).reverse());
+const smaller = recentScoreChanges({ game: cappedGame, limit: 2 });
+assert.deepEqual(smaller.map((entry) => entry.change.id), ["cap-12", "cap-11"]);
+const skipDoesNotConsumeCap = recentScoreChanges({ game: recentLogGame, limit: 3 });
+assert.equal(skipDoesNotConsumeCap.length, 3, "a skipped ghost entry must not consume a cap slot");
+
+// recentScoreChanges: empty guards
+assert.deepEqual(recentScoreChanges({ game: null }), []);
+assert.deepEqual(recentScoreChanges({ game: undefined }), []);
+assert.deepEqual(recentScoreChanges({}), []);
+assert.deepEqual(recentScoreChanges({ game }), [], "a fresh game has no change log");
+assert.deepEqual(recentScoreChanges({ game: { ...game, changes: [] } }), []);
+assert.deepEqual(recentScoreChanges({ game: { ...game, changes: "not-a-list" } }), []);
+assert.deepEqual(recentScoreChanges({ game: { ...game, changes: [], players: "nope" } }), []);
+
+// recentScoreChanges: entries produced by applyScoreChange resolve naturally,
+// including the per-change `at` stamps
+const appliedRecent = applyScoreChange({
+  game: stampedTwice.game,
+  playerId: samId,
+  amount: 7,
+  now: new Date("2026-10-15T14:00:00.000Z")
+});
+const appliedRecentEntries = recentScoreChanges({ game: appliedRecent.game });
+assert.equal(appliedRecentEntries.length, appliedRecent.game.changes.length);
+assert.equal(appliedRecentEntries[0].change.amount, 7);
+assert.equal(appliedRecentEntries[0].player.id, samId);
+assert.equal(appliedRecentEntries[0].change.at, "2026-10-15T14:00:00.000Z");
+
+console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, per-change `at` ISO stamps from the injectable clock, change log, safe-integer guard, immutability, latest-change undo, and recentScoreChanges (newest-first pairs, cap 8, player resolution, empty guards).");

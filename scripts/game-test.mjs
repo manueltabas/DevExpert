@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
 import { applyScoreChange } from "../src/score.js";
-import { finishGame, replayGame, renameGame, displayGameTitle, GAME_ERROR_CODES } from "../src/game.js";
+import { finishGame, replayGame, renameGame, displayGameTitle, formatRelativeTimestamp, GAME_ERROR_CODES } from "../src/game.js";
 
 // finishGame guards: missing/invalid games report "missing-game" and never throw
 assert.deepEqual(finishGame({ game: null }), { game: null, error: "missing-game" });
@@ -381,5 +381,93 @@ assert.deepEqual(labelGame, { title: "", createdAt: new Date(2026, 9, 12, 21, 8)
 // the error codes live in a local list, separate from SCORE_ERROR_CODES
 assert.deepEqual(GAME_ERROR_CODES, ["missing-game", "already-finished", "not-finished", "invalid-roster", "invalid-title", "title-too-long"]);
 
-console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields, preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed that start untitled (the original title is never copied) with copied names/colors/markers/order, literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, non-mutating replay input, renameGame guards (missing-game/already-finished/invalid-title/title-too-long) with trim-once success and no input mutation, displayGameTitle verbatim/auto-label/Game fallback formatting, and a local error-code list.");
+// formatRelativeTimestamp: deterministic relative buckets anchored to an
+// injectable `now` (track-game-activity). Stamps are built at exact offsets
+// from `now`, so the assertions are timezone-independent.
+const relativeNow = new Date("2026-10-15T12:00:00.000Z");
+const stampAgo = (ms) => new Date(relativeNow.getTime() - ms).toISOString();
+const stampAhead = (ms) => new Date(relativeNow.getTime() + ms).toISOString();
+
+// < 1 minute — including exact-equality neighbors and clock skew
+assert.equal(formatRelativeTimestamp(stampAgo(0), relativeNow), "just now");
+assert.equal(formatRelativeTimestamp(stampAgo(1), relativeNow), "just now");
+assert.equal(formatRelativeTimestamp(stampAgo(59_999), relativeNow), "just now", "59 999 ms is still inside the minute bucket");
+assert.equal(formatRelativeTimestamp(stampAhead(1), relativeNow), "just now", "a future stamp (clock skew) is just now");
+assert.equal(formatRelativeTimestamp(stampAhead(3_600_000), relativeNow), "just now", "any future skew stays just now");
+
+// minutes: exactly 60 000 ms crosses into the minute bucket (floored)
+assert.equal(formatRelativeTimestamp(stampAgo(60_000), relativeNow), "1m ago", "exactly 60 000 ms is 1m ago");
+assert.equal(formatRelativeTimestamp(stampAgo(61_000), relativeNow), "1m ago");
+assert.equal(formatRelativeTimestamp(stampAgo(10 * 60_000 + 5_000), relativeNow), "10m ago", "floored minutes with a safety margin");
+assert.equal(formatRelativeTimestamp(stampAgo(59 * 60_000), relativeNow), "59m ago");
+assert.equal(formatRelativeTimestamp(stampAgo(3_599_999), relativeNow), "59m ago", "the last millisecond under an hour stays minutes");
+
+// hours
+assert.equal(formatRelativeTimestamp(stampAgo(3_600_000), relativeNow), "1h ago", "exactly one hour");
+assert.equal(formatRelativeTimestamp(stampAgo(2 * 3_600_000 + 30 * 60_000 + 5_000), relativeNow), "2h ago", "floored hours");
+assert.equal(formatRelativeTimestamp(stampAgo(23 * 3_600_000 + 59 * 60_000 + 59_999), relativeNow), "23h ago");
+assert.equal(formatRelativeTimestamp(stampAgo(86_399_999), relativeNow), "23h ago", "the last millisecond under a day stays hours");
+
+// days
+assert.equal(formatRelativeTimestamp(stampAgo(86_400_000), relativeNow), "1d ago", "exactly one day");
+assert.equal(formatRelativeTimestamp(stampAgo(2 * 86_400_000 + 5_000), relativeNow), "2d ago", "floored days");
+assert.equal(formatRelativeTimestamp(stampAgo(6 * 86_400_000 + 23 * 3_600_000 + 59 * 60_000 + 59_999), relativeNow), "6d ago");
+assert.equal(formatRelativeTimestamp(stampAgo(7 * 86_400_000 - 1), relativeNow), "6d ago", "the last millisecond under a week stays days");
+
+// ≥ 7 days — the absolute branch, identical to the title auto-label format
+const STAMP_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+function expectedAbsoluteStamp(iso) {
+  const date = new Date(iso);
+  return `${date.getDate()} ${STAMP_MONTHS[date.getMonth()]}, ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+const weekStamp = stampAgo(7 * 86_400_000);
+assert.equal(formatRelativeTimestamp(weekStamp, relativeNow), expectedAbsoluteStamp(weekStamp), "exactly 7 days renders the absolute stamp");
+const monthStamp = "2026-09-03T08:07:00.000Z";
+assert.equal(formatRelativeTimestamp(monthStamp, relativeNow), expectedAbsoluteStamp(monthStamp), "a month-old stamp renders the absolute stamp");
+assert.equal(
+  formatRelativeTimestamp(monthStamp, relativeNow),
+  displayGameTitle({ title: "", createdAt: monthStamp }).replace("Game — ", ""),
+  "the absolute branch must equal the deterministic auto-label format"
+);
+
+// formatRelativeTimestamp: unusable input degrades to null so callers pick
+// their own fallback
+assert.equal(formatRelativeTimestamp(42, relativeNow), null);
+assert.equal(formatRelativeTimestamp(null, relativeNow), null);
+assert.equal(formatRelativeTimestamp(undefined, relativeNow), null);
+assert.equal(formatRelativeTimestamp({}, relativeNow), null);
+assert.equal(formatRelativeTimestamp("not a date", relativeNow), null);
+assert.equal(formatRelativeTimestamp("", relativeNow), null);
+assert.equal(formatRelativeTimestamp("2026-13-45T99:99:99Z", relativeNow), null);
+
+// formatRelativeTimestamp is pure: same input, same output, no mutation
+assert.equal(formatRelativeTimestamp(stampAgo(120_000), relativeNow), "2m ago");
+assert.equal(formatRelativeTimestamp(stampAgo(120_000), relativeNow), "2m ago");
+
+// applyScoreChange stamps entries with the injected clock so change entries
+// are datable without any game-level timestamp (track-game-activity)
+const { game: datableGame } = createGame({
+  title: "Datable changes",
+  rows: [
+    { id: "row-1", name: "Alex", color: "blue" },
+    { id: "row-2", name: "Sam", color: "red" }
+  ],
+  now: new Date("2026-10-12T10:00:00.000Z"),
+  idSeed: "datable"
+});
+const datableApplied = applyScoreChange({
+  game: datableGame,
+  playerId: datableGame.players[0].id,
+  amount: 5,
+  now: new Date("2026-10-15T09:30:00.000Z")
+});
+assert.equal(datableApplied.error, null);
+assert.deepEqual(
+  datableApplied.game.changes.map((change) => change.at),
+  ["2026-10-15T09:30:00.000Z"],
+  "the change entry carries the injected clock's ISO stamp"
+);
+assert.ok(!("at" in datableGame), "the input game must never gain change fields");
+
+console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields, preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed that start untitled (the original title is never copied) with copied names/colors/markers/order, literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, non-mutating replay input, renameGame guards (missing-game/already-finished/invalid-title/title-too-long) with trim-once success and no input mutation, displayGameTitle verbatim/auto-label/Game fallback formatting, formatRelativeTimestamp deterministic buckets (just now / minutes / hours / days / absolute ≥ 7 days) with skew, boundary, purity, and null fallbacks, per-change `at` stamps from the injectable clock, and a local error-code list.");
 

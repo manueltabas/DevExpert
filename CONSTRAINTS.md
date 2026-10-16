@@ -75,7 +75,27 @@
   Zero entries are rejected and create no change-log entry; decimals,
   non-numbers, and out-of-range amounts are rejected without changing totals.
   Totals may be negative, and each applied change appends
-  `{ id, playerId, amount }` to the in-memory `game.changes` log.
+  `{ id, playerId, amount, at }` to the in-memory `game.changes` log.
+- Game activity must derive only from already-stored data — no parallel
+  state: last-activity is the storage-owned `updatedAt` (the six save
+  triggers are exactly the activity set; navigation, resume, prompt
+  open/cancel, player selection, and failed writes never write), and each new
+  change entry must carry an `at` ISO string from `applyScoreChange`'s
+  injectable `now` so per-entry ages survive reloads. Relative-time rendering
+  must stay deterministic with no locale APIs: `formatRelativeTimestamp`
+  locks the thresholds (`just now` under a minute including future skew,
+  floored `m`/`h`/`d` buckets, then the shared `d MMM, HH:mm` absolute
+  stamp ≥ 7 days) and returns `null` for unusable input. Missing or corrupt
+  stamps degrade instead of failing: cards walk `updatedAt` → `createdAt` →
+  the bare `Updated` fallback, legacy entries without `at` render a muted
+  `—` time cell, and nothing rewrites the stored payload on load. Finished
+  stamps freeze at the finish persist; replay must never re-persist the
+  original. The Recent entries panel is display-only over
+  `recentScoreChanges` (cap `RECENT_ENTRIES_LIMIT = 8`, newest first,
+  unresolvable players skipped, no interactive controls, no new live
+  region), renders only in the active view's score panel, and its header
+  `Last: {name} {signedAmount}` must always show the sign character (never
+  color alone).
 - The score field must accept only plain signed-integer text, guarded at both
   layers: a `beforeinput` guard on `#score-amount` must cancel every insertion
   whose prospective value is not a plain signed-integer draft (letters such as
