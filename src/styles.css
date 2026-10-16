@@ -944,6 +944,18 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* Player number subtitle (show-player-numbers): the selected card speaks the
+   setup-order badge in the mockup's "Alex / Player 1" shape — muted and small
+   on the panel label rhythm, never the only differentiator (the visible name
+   stays beside it). Additive only: no existing selector, token, breakpoint, or
+   motion rule is modified. */
+.score-selected-number {
+  color: var(--muted);
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
 .score-amount-field {
   font-size: 1.3rem;
   font-weight: 700;

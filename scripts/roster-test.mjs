@@ -4,6 +4,7 @@ import {
   PLAYER_COLORS,
   createGame,
   createSetupRows,
+  playerNumbers,
   validateRoster
 } from "../src/roster.js";
 
@@ -70,4 +71,43 @@ assert.equal(twentyRows[0].color, twentyRows[7].color);
 const twentyOneRows = [...twentyRows, { id: "extra", name: "Extra", color: "blue" }];
 assert.equal(validateRoster(twentyOneRows).valid, false);
 
-console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals; blank, non-string, and missing titles store the empty string (no fallback substitution).");
+// playerNumbers (show-player-numbers): badge numbers derive from the roster's
+// setup order at render time — a pure display map keyed by player.id, never
+// persisted anew and never a rank.
+assert.deepEqual(
+  [...playerNumbers(game)],
+  [["test-player-1", 1], ["test-player-2", 2]],
+  "badge numbers map each player id to its 1-based setup position"
+);
+assert.deepEqual(
+  [...playerNumbers({ players: Array.from({ length: 20 }, (_, index) => ({ id: `p-${index + 1}` })) })],
+  Array.from({ length: 20 }, (_, index) => [`p-${index + 1}`, index + 1]),
+  "a full roster maps 1..N in array order"
+);
+// Replay-shaped arrays (replayGame rebuilds players in the original's order):
+// the map is positional, so replays renumber 1..N from setup order.
+assert.deepEqual(
+  [...playerNumbers({ players: [{ id: "replay-game-player-1" }, { id: "replay-game-player-2" }, { id: "replay-game-player-3" }] })],
+  [["replay-game-player-1", 1], ["replay-game-player-2", 2], ["replay-game-player-3", 3]],
+  "replay-shaped rosters renumber 1..N in array order"
+);
+for (const invalidGame of [null, undefined, "game", 42, {}, { players: null }, { players: "nope" }, { players: {} }]) {
+  assert.equal(playerNumbers(invalidGame).size, 0, "guards return an empty Map");
+}
+// Corrupt rosters degrade to truthful positions: unusable entries never crash
+// the derivation and never consume a position.
+assert.deepEqual(
+  [...playerNumbers({ players: [null, { id: "a" }, undefined, { id: "b" }] })],
+  [["a", 2], ["b", 4]],
+  "non-object player entries are skipped without consuming a position"
+);
+const numbersInput = { players: [{ id: "x" }, { id: "y" }] };
+const numbersSnapshot = structuredClone(numbersInput);
+const firstNumbers = playerNumbers(numbersInput);
+const secondNumbers = playerNumbers(numbersInput);
+assert.notEqual(firstNumbers, secondNumbers, "each call returns a fresh Map");
+firstNumbers.set("x", 99);
+assert.equal(playerNumbers(numbersInput).get("x"), 1, "mutating a returned Map never affects later derivations");
+assert.deepEqual(numbersInput, numbersSnapshot, "the input game is never mutated");
+
+console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals; blank, non-string, and missing titles store the empty string (no fallback substitution); playerNumbers derives positional 1..N badges with empty-Map guards, skipped corrupt entries, fresh Maps, and input immutability.");

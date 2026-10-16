@@ -9,6 +9,7 @@ import {
   createSetupRow,
   createSetupRows,
   getColor,
+  playerNumbers,
   validateRoster
 } from "./roster.js";
 import {
@@ -654,6 +655,9 @@ function renderActiveGame() {
   }
 
   const selectedPlayer = game.players.find((player) => player.id === state.selectedPlayerId) ?? null;
+  // Badge numbers derive once per surface render (show-player-numbers) and are
+  // threaded into the row/card renderers; nothing here writes storage.
+  const numbers = playerNumbers(game);
 
   appRoot.innerHTML = `
     <section class="active-layout" aria-labelledby="active-title">
@@ -682,7 +686,7 @@ function renderActiveGame() {
           ${renderStorageNotice()}
 
           <ol class="active-roster" aria-label="Active game players">
-            ${rankPlayers(game).map((row) => renderActivePlayer(row.player, row.rank, row.player.id === state.selectedPlayerId)).join("")}
+            ${rankPlayers(game).map((row) => renderActivePlayer(row.player, row.rank, row.player.id === state.selectedPlayerId, numbers.get(row.player.id))).join("")}
           </ol>
         </div>
       </div>
@@ -694,7 +698,7 @@ function renderActiveGame() {
             <h3 id="score-panel-title">Add points</h3>
           </div>
         </div>
-        ${selectedPlayer ? renderScoreForm(selectedPlayer) : ""}
+        ${selectedPlayer ? renderScoreForm(selectedPlayer, numbers.get(selectedPlayer.id)) : ""}
         ${renderRecentEntries(game)}
         ${renderFinishSection()}
       </aside>
@@ -778,6 +782,10 @@ function renderFinishSection() {
 
 function renderFinishedGame(game) {
   const podium = podiumRows(game);
+  // Badge numbers derive once per surface render (show-player-numbers) and are
+  // threaded into the standings rows; the podium dialog derives its own map
+  // from the same game. Nothing here writes storage.
+  const numbers = playerNumbers(game);
 
   appRoot.innerHTML = `
     <section class="active-layout" aria-labelledby="active-title">
@@ -805,7 +813,7 @@ function renderFinishedGame(game) {
           ${renderStorageNotice()}
 
           <ol class="active-roster" aria-label="Active game players">
-            ${rankPlayers(game).map((row) => renderFinishedPlayer(row.player, row.rank)).join("")}
+            ${rankPlayers(game).map((row) => renderFinishedPlayer(row.player, row.rank, numbers.get(row.player.id))).join("")}
           </ol>
 
           <div class="replay-section">
@@ -823,6 +831,9 @@ function renderFinishedGame(game) {
 }
 
 function renderPodiumDialog(podium, game) {
+  // Badge numbers derive once for the dialog's rows from the same game
+  // (show-player-numbers); positional numbers are immune to any stored marker.
+  const numbers = playerNumbers(game);
   const groups = [1, 2, 3]
     .map((rank) => {
       const rows = podium.filter((row) => row.rank === rank);
@@ -835,7 +846,7 @@ function renderPodiumDialog(podium, game) {
         <li class="podium-group${rank === 1 ? " is-rank-one" : ""}">
           <h3 class="podium-rank-heading">Rank ${rank}</h3>
           <ul class="podium-players">
-            ${rows.map((row) => renderPodiumPlayer(row.player, row.rank)).join("")}
+            ${rows.map((row) => renderPodiumPlayer(row.player, row.rank, numbers.get(row.player.id))).join("")}
           </ul>
         </li>
       `;
@@ -856,13 +867,13 @@ function renderPodiumDialog(podium, game) {
   `;
 }
 
-function renderPodiumPlayer(player, rank) {
+function renderPodiumPlayer(player, rank, playerNumber) {
   const color = getColor(player.color);
 
   return `
     <li class="podium-player">
       <span class="podium-player-rank">${rank}</span>
-      <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
       <span class="podium-player-name">${escapeHtml(player.name)}</span>
       <span class="podium-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
     </li>
@@ -950,26 +961,26 @@ function handlePodiumClose() {
   appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
-function renderFinishedPlayer(player, rank) {
+function renderFinishedPlayer(player, rank, playerNumber) {
   const color = getColor(player.color);
 
   return `
     <li class="active-player is-final" data-player-id="${escapeAttribute(player.id)}">
       <span class="active-player-rank">${rank}</span>
-      <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
       <span class="active-player-name">${escapeHtml(player.name)}</span>
       <span class="active-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
     </li>
   `;
 }
 
-function renderActivePlayer(player, rank, isSelected) {
+function renderActivePlayer(player, rank, isSelected, playerNumber) {
   const color = getColor(player.color);
 
   return `
     <li class="active-player${isSelected ? " is-selected" : ""}" data-player-id="${escapeAttribute(player.id)}">
       <span class="active-player-rank">${rank}</span>
-      <span class="player-token ${color.cssClass}" aria-label="Player marker ${player.marker}, ${color.label}">${escapeHtml(player.marker)}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
       <span class="active-player-name">${escapeHtml(player.name)}</span>
       <span class="active-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
       <button type="button" class="add-points-action" data-action="select-player" aria-pressed="${isSelected ? "true" : "false"}" aria-label="Add points for ${escapeAttribute(player.name)}">Add points</button>
@@ -977,14 +988,15 @@ function renderActivePlayer(player, rank, isSelected) {
   `;
 }
 
-function renderScoreForm(player) {
+function renderScoreForm(player, playerNumber) {
   const color = getColor(player.color);
 
   return `
     <form class="score-form" novalidate data-score-form>
       <p class="score-selected">
-        <span class="player-token ${color.cssClass}" aria-hidden="true">${escapeHtml(player.marker)}</span>
+        <span class="player-token ${color.cssClass}" aria-hidden="true">${playerNumber}</span>
         <span class="score-selected-name">${escapeHtml(player.name)}</span>
+        <span class="score-selected-number">Player ${playerNumber}</span>
       </p>
 
       <label class="field-label" for="score-amount">Points for ${escapeHtml(player.name)}</label>
@@ -1055,6 +1067,10 @@ function renderScoreFeedback() {
 // the popped change simply stops rendering and the header recomputes.
 function renderRecentEntries(game) {
   const entries = recentScoreChanges({ game });
+  // Badge numbers derive once per surface render (show-player-numbers) from
+  // the same game; entries hold original player references, so the id-keyed
+  // map resolves each row's number.
+  const numbers = playerNumbers(game);
 
   if (entries.length === 0) {
     return `
@@ -1073,19 +1089,19 @@ function renderRecentEntries(game) {
         <p class="recent-entries-last">Last: ${escapeHtml(latest.player.name)} ${escapeHtml(signedScoreAmount(latest.change.amount))}</p>
       </div>
       <ul class="recent-entries-list" aria-label="Recent entries">
-        ${entries.map((entry) => renderRecentEntry(entry)).join("")}
+        ${entries.map((entry) => renderRecentEntry(entry, numbers.get(entry.player.id))).join("")}
       </ul>
     </div>
   `;
 }
 
-function renderRecentEntry({ change, player }) {
+function renderRecentEntry({ change, player }, playerNumber) {
   const color = getColor(player.color);
   const timeToken = formatRelativeTimestamp(change?.at);
 
   return `
     <li class="recent-entry">
-      <span class="player-token ${color.cssClass}" aria-label="Player marker ${escapeAttribute(player.marker)}, ${escapeAttribute(color.label)}">${escapeHtml(player.marker)}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
       <span class="recent-entry-name">${escapeHtml(player.name)}</span>
       <span class="recent-entry-amount ${change.amount > 0 ? "is-positive" : "is-negative"}">${escapeHtml(signedScoreAmount(change.amount))} pts</span>
       <span class="recent-entry-time">${escapeHtml(recentEntryTimeText(timeToken))}</span>
