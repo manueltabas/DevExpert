@@ -294,6 +294,14 @@ h3 {
   gap: 20px;
 }
 
+/* The home view renders the hero and dashboard inside #app, so the
+   home-layout gap above never separated the top hero from the panels.
+   Keep every view root spaced; only the home view has two top-level blocks. */
+[data-app-root] {
+  display: grid;
+  gap: var(--space-xl);
+}
+
 .hero-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1505,6 +1513,10 @@ h3 {
 
   .hero-actions {
     justify-content: flex-start;
+  }
+
+  [data-app-root] {
+    gap: 20px;
   }
 
   .dashboard-grid {

@@ -157,7 +157,9 @@ replaying a finished game — is saved to this browser's
 local storage, so reloading the page never loses a game in progress. The home
 screen's **Unfinished games** panel lists each saved game with its title,
 player count, player names and color markers, and an "Updated" timestamp,
-most recently updated first. Each panel previews its five most recent games;
+most recently updated first. The hero and the two panels are separated by the
+same 32px desktop separator as the panels themselves (20px when stacked).
+Each panel previews its five most recent games;
 when it holds more, a **View all (N)** control below the list expands it to the
 full history (the label flips to **Show latest 5**), without changing what is
 saved. Each card's **Resume** control reopens the game

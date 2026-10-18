@@ -78,7 +78,10 @@ the home "Unfinished games" list from the active saved games and the
 most recent games (`PANEL_PREVIEW_LIMIT`) until a transient per-panel
 `state.showAllActiveGames`/`state.showAllFinishedGames` boolean expands it
 through a `View all (N)` / `Show latest 5` toggle; the slice is render-time only,
-toggling never writes, and the booleans reset at every Dashboard arrival. It
+toggling never writes, and the booleans reset at every Dashboard arrival. The
+view root (`[data-app-root]`) is a grid with a 32px desktop gap (20px stacked),
+so the hero and dashboard panels share the same separator; the old
+`.home-layout` gap was inert because both blocks live inside `#app`. It
 resumes a saved game by restoring it as the active game — so undo works
 immediately after a reload,
 undone changes never resurrect, and finished games reopen read-only. Ranks
@@ -422,7 +425,8 @@ persistence slice is implemented.
 - `scripts/browser-refine-ui-test.mjs`: desktop/mobile post-playtest refinement
    checks — the Dashboard five-game preview with per-panel View all (N)/Show
    latest 5 toggles (aria-expanded/aria-controls, focus, byte-identical
-   storage, no toggle ≤5), pill removal, 32px desktop gutter, 320px stacking;
+   storage, no toggle ≤5), pill removal, 32px desktop gutter and top
+   separator, 320px stacking;
    staged combined counter drafts and whole-row selection with inert finished
    rows; the header Finish game opener and prompt placement; the five-row
    Recent entries cap; ordered podium steps with the ranking-order Rest of the

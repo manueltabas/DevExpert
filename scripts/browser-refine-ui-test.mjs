@@ -189,6 +189,11 @@ async function readDashboard(cdp) {
     const after = grid ? getComputedStyle(grid, "::after") : null;
     const first = grid?.children[0]?.getBoundingClientRect() ?? null;
     const second = grid?.children[1]?.getBoundingClientRect() ?? null;
+    const hero = document.querySelector(".hero-panel");
+    const heroRect = hero?.getBoundingClientRect() ?? null;
+    const gridRect = grid?.getBoundingClientRect() ?? null;
+    const appRoot = document.querySelector("[data-app-root]");
+    const appRootStyle = appRoot ? getComputedStyle(appRoot) : null;
 
     return {
       unfinishedTitles: titles(panelFor("unfinished")),
@@ -199,6 +204,8 @@ async function readDashboard(cdp) {
       retentionNote: document.querySelector(".retention-note")?.textContent?.trim() ?? null,
       columnGap: gridStyle?.columnGap ?? null,
       rowGap: gridStyle?.rowGap ?? null,
+      topGap: appRootStyle?.rowGap ?? null,
+      heroToDashboardGap: heroRect && gridRect ? Math.round(gridRect.top - heroRect.bottom) : null,
       gridBorderTopWidth: gridStyle?.borderTopWidth ?? null,
       beforeContent: before?.content ?? null,
       afterContent: after?.content ?? null,
@@ -355,6 +362,8 @@ async function runDashboardSession(cdp, { consoleProblems }) {
     "the retention note stays");
   assert.equal(collapsed.columnGap, "32px", "the desktop dashboard gutter is 32px");
   assert.equal(collapsed.rowGap, "32px");
+  assert.equal(collapsed.topGap, "32px", "the desktop top separator uses the same 32px gap");
+  assert.equal(collapsed.heroToDashboardGap, 32, "the hero and dashboard are separated by 32px");
   assert.equal(collapsed.gridBorderTopWidth, "0px", "no divider border is introduced");
   assert.equal(collapsed.beforeContent, "none", "no divider pseudo-element is introduced");
   assert.equal(collapsed.afterContent, "none");
@@ -444,6 +453,8 @@ async function runDashboardSession(cdp, { consoleProblems }) {
   assert.equal(mobile.columns, 1, "the dashboard is single-column at 320px");
   assert.equal(mobile.stacked, true, "the panels stack at 320px");
   assert.equal(mobile.rowGap, "20px", "the stacked gutter returns to 20px");
+  assert.equal(mobile.topGap, "20px", "the top separator returns to 20px when stacked");
+  assert.equal(mobile.heroToDashboardGap, 20, "the hero and dashboard keep a 20px mobile gap");
   assert.equal(mobile.horizontalOverflow, false, "the dashboard must not overflow at 320px");
   assert.equal(mobile.unfinishedToggle.height >= 44, true);
   assert.equal(mobile.finishedToggle.height >= 44, true);
@@ -872,7 +883,7 @@ async function main() {
     const finished = await runSession("finished-and-recent", runFinishedAndRecentSession);
     assert.equal(typeof finished.recentScreenshot, "string");
 
-    console.log("Browser refine-ui test passed: the Dashboard removes the Local pill, keeps the retention note, uses a 32px desktop gutter with no divider, previews five games per panel behind a per-panel View all (N)/Show latest 5 toggle (aria-expanded/aria-controls, focus retained, byte-identical storage, no toggle at ≤5, 320px stacking); quick counters stage one clamped combined draft with no totals/ranks/feedback/recent/storage change and Save applies it as one change (the shared stepper contract remains covered by browser-quick-score); whole active rows select through the same path as Add points while finished rows stay inert; Finish game sits in the active header with the unchanged prompt below the header/above the leaderboard and all ids/copy/focus at desktop and 320px; Recent entries caps at five while the full log persists; the podium renders ordered 2-left/1-center-tallest/3-right steps plus a ranking-order Rest of the table list, preserves ties and missing ranks, stacks distinct ranks in order at 320px, and keeps the dialog shell/actions/confetti/focus behavior; finished standings use one full-width grid track with no empty score-panel column at 1280x800 and 320x720; zero uncaught console errors.");
+    console.log("Browser refine-ui test passed: the Dashboard removes the Local pill, keeps the retention note, uses a 32px desktop gutter and top separator with no divider, previews five games per panel behind a per-panel View all (N)/Show latest 5 toggle (aria-expanded/aria-controls, focus retained, byte-identical storage, no toggle at ≤5, 320px stacking); quick counters stage one clamped combined draft with no totals/ranks/feedback/recent/storage change and Save applies it as one change (the shared stepper contract remains covered by browser-quick-score); whole active rows select through the same path as Add points while finished rows stay inert; Finish game sits in the active header with the unchanged prompt below the header/above the leaderboard and all ids/copy/focus at desktop and 320px; Recent entries caps at five while the full log persists; the podium renders ordered 2-left/1-center-tallest/3-right steps plus a ranking-order Rest of the table list, preserves ties and missing ranks, stacks distinct ranks in order at 320px, and keeps the dialog shell/actions/confetti/focus behavior; finished standings use one full-width grid track with no empty score-panel column at 1280x800 and 320x720; zero uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       dashboard.collapsedScreenshot,
       dashboard.expandedScreenshot,

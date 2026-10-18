@@ -299,7 +299,10 @@
   Dashboard arrival); toggling re-renders and refocuses the toggle but must
   never write storage, change `updatedAt`, or alter the persisted payload.
   At ≤5 games there is no toggle and no wrapper. The hero must not render the
-  old "Local to this browser" pill; the retention note stays.
+  old "Local to this browser" pill; the retention note stays. The gap between
+  the hero and the dashboard is 32px at desktop and 20px when stacked, using
+  the `[data-app-root]` grid gap (the `.home-layout` gap alone is inert because
+  the hero and dashboard share the `#app` parent).
 - Active leaderboard rows are click-to-select: a click on any non-button part
   of an active row runs the same selection path as its Add points control
   (`selectedPlayerId`, cleared feedback, re-render, focus `#score-amount`).

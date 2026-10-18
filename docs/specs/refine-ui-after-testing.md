@@ -38,7 +38,7 @@ so recent games, staged points, and final results stay quick to scan and act on.
 ### Decision 1 — Dashboard: pill, gutter, five-game preview, toggle
 
 - **Pill**: delete only the `<span class="status-pill">Local to this browser</span>` from the hero's `.hero-actions`. Keep the `.status-pill` CSS (setup and game headers still use it) and keep `.retention-note`.
-- **Gutter**: `.dashboard-grid` uses `gap: var(--space-xl)` (32px) at desktop; the ≤720px single-column rule keeps the current 20px gap. No divider line, border, or pseudo-element between panels.
+- **Gutter**: `.dashboard-grid` uses `gap: var(--space-xl)` (32px) at desktop; the ≤720px single-column rule keeps the current 20px gap. The hero and dashboard are separated by the same 32px desktop gap and 20px stacked gap via `[data-app-root]`; the old `.home-layout` gap was inert because both blocks live inside `#app`. No divider line, border, or pseudo-element between panels.
 - **Preview cap**: `const PANEL_PREVIEW_LIMIT = 5` in `src/main.js`. Each panel renders the first five games of its existing `orderSavedGamesForDisplay(...)` list (`status === "active"` / `"finished"`), preserving the accepted most-recent-first order. The full list is never persisted differently; it is only sliced at render time.
 - **Toggle**: render only when the panel has more than five games. Markup after the list (Unfinished: before the retention note):
   - `<div class="panel-toggle-row"><button type="button" class="secondary-action panel-toggle" data-action="toggle-unfinished-games" aria-expanded="false" aria-controls="unfinished-game-list" aria-label="View all (N) unfinished games">View all (N)</button></div>` — every toggle is a ≥44px focusable secondary action.
@@ -96,7 +96,7 @@ Then each panel shows its five most recent games, each shows `View all (7)` with
 
 Given the Dashboard at desktop and 320px
 When it renders
-Then the text `Local to this browser` is absent while the retention note remains visible, the desktop panel gutter is 32px with no divider line, and at 320px the panels still stack single-column with no horizontal overflow.
+Then the text `Local to this browser` is absent while the retention note remains visible, the desktop panel gutter and the hero-to-dashboard separator are both 32px with no divider line, and at 320px the panels still stack single-column with a 20px top separator and no horizontal overflow.
 
 ### Scenario 3: Counters stage a combined draft
 
@@ -168,7 +168,7 @@ Then the finished layout has one grid track, the roster panel spans the content 
 3. **`src/main.js` finish**: move the opener into `renderActiveGame`'s `.active-header` with the preserved `data-finish-section` wrapper; render the unchanged prompt between `.active-header` and `.roster-panel`; remove the finish section from the score panel; add the header wrap/full-width CSS.
 4. **`src/score.js`**: set `RECENT_ENTRIES_LIMIT = 5`.
 5. **`src/standings.js` + `src/main.js` podium**: add `podiumRestRows`; render present steps with `data-rank`, the rest section/list, and the new CSS grid/stack rules; keep the dialog shell, actions, confetti, focus, and dismissal untouched.
-6. **`src/styles.css`**: 32px desktop dashboard gap; `.panel-toggle*`; pointer cursor for active rows only; header finish/full-width rules; completed layout modifier; podium step/rest layout and ≤600px stack. Keep tokens and existing breakpoints.
+6. **`src/styles.css`**: 32px desktop dashboard gap plus `[data-app-root]` grid gap for the hero separator (20px stacked); `.panel-toggle*`; pointer cursor for active rows only; header finish/full-width rules; completed layout modifier; podium step/rest layout and ≤600px stack. Keep tokens and existing breakpoints.
 7. **Tests/docs**: update the suites below, add `scripts/browser-refine-ui-test.mjs`, wire `package.json`/`init.sh`, and update README/ARCHITECTURE/CONSTRAINTS/DESIGN.
 
 ## Expected File Changes
@@ -219,7 +219,7 @@ Then the finished layout has one grid track, the roster panel spans the content 
 ## Implementation Tasks
 
 - [ ] `src/main.js`: remove the hero pill; add `PANEL_PREVIEW_LIMIT`, `showAllActiveGames`/`showAllFinishedGames`, list slicing, list ids, toggle markup/aria/handlers/focus, and reset points.
-- [ ] `src/styles.css`: `.dashboard-grid` 32px desktop gap + 20px stacked gap; `.panel-toggle-row`/`.panel-toggle` ≥44px styling; no divider.
+- [ ] `src/styles.css`: `.dashboard-grid` 32px desktop gap + 20px stacked gap; `[data-app-root]` 32px desktop/20px stacked top separator; `.panel-toggle-row`/`.panel-toggle` ≥44px styling; no divider.
 - [ ] `src/main.js`: `applyDraftDelta`, route stepper/counters through it, remove immediate counter saves, update counter names; add whole-row click selection and active-only cursor; leave finished rows inert.
 - [ ] `src/main.js` + `src/styles.css`: move Finish game to `.active-header` (preserve `data-finish-section`, ids, copy, focus), render the prompt below the header/above the leaderboard, remove the score-panel finish section, and add the ≤720/≤360 header rules.
 - [ ] `src/score.js`: `RECENT_ENTRIES_LIMIT = 5`.
@@ -252,7 +252,7 @@ Then the finished layout has one grid track, the roster panel spans the content 
 
 ## Validator Checklist
 
-- [ ] Dashboard: pill gone, retention note present, 32px desktop gutter with no divider, both panels cap at five, toggles appear only above five, labels/`aria-expanded`/`aria-controls` correct per panel, expansion shows all in order, focus returns to the toggle, toggling never writes, 320px still stacks.
+- [ ] Dashboard: pill gone, retention note present, 32px desktop gutter and top separator with no divider, both panels cap at five, toggles appear only above five, labels/`aria-expanded`/`aria-controls` correct per panel, expansion shows all in order, focus returns to the toggle, toggling never writes, 320px still stacks with a 20px top separator.
 - [ ] Quick counters stage drafts through the shared clamped plain-integer helper; no totals/rank/feedback/recent/storage change on tap; Save applies the combined draft as one change; stepper behavior unchanged; accessible names say draft.
 - [ ] Whole active row clicks select/highlight with the Add points button still the keyboard/`aria-pressed` control; finished rows are inert.
 - [ ] Finish game lives in the active header; the unchanged confirmation renders below the header/above the leaderboard; all existing ids/copy/focus/cancel/confirm/320px behavior survives; score panel no longer contains it.
