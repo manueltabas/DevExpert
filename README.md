@@ -48,7 +48,7 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (shared staged draft, combined Save, focus contract, storage identity).
 - `npm run test:browser:player-numbers`: run only the Chrome player-number badge checks (setup renumbering, badges across every roster surface, rank independence, resume/replay stability, corrupt-marker degradation).
 - `npm run test:browser:score-distribution`: run only the Chrome score-distribution checks (share math and rounding invariants, live re-derivation on save/undo/reorder, zero/negative treatment, surface exclusion, responsive and accessibility baseline).
-- `npm run test:browser:refine-ui`: run only the Chrome post-playtest refinement checks (dashboard preview/toggle, staged counters, row selection, header finish, recent cap, podium steps/rest, finished full width).
+- `npm run test:browser:refine-ui`: run only the Chrome post-playtest refinement checks (dashboard five-card preview and history dialog, staged counters, row selection, header finish, recent cap, tactile podium steps/ranked summary, finished full width).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -160,9 +160,12 @@ player count, player names and color markers, and an "Updated" timestamp,
 most recently updated first. The hero and the two panels are separated by the
 same 32px desktop separator as the panels themselves (20px when stacked).
 Each panel previews its five most recent games;
-when it holds more, a **View all (N)** control below the list expands it to the
-full history (the label flips to **Show latest 5**), without changing what is
-saved. Each card's **Resume** control reopens the game
+when it holds more, a **View all (N)** opener below the list opens a scrollable
+history dialog listing every game of that status in the same most-recent-first
+order, using the same cards and Resume/View results controls. The preview stays
+visible behind the modal; the dialog's close button, **Escape**, or a backdrop
+click returns focus to that panel's opener, never writes storage, and leaves
+the preview unchanged. Each card's **Resume** control reopens the game
 with its roster, totals, and change log intact, so undo works immediately
 after resuming and undone changes never reappear after a reload. Games are
 saved only in this browser — clearing site data removes them. Ranks stay
@@ -201,23 +204,29 @@ also be selected by clicking anywhere on their active leaderboard row, not
 just the Add points button; finished rows are inert.
 
 Confirming the finish also celebrates once: a dismissible **Final podium**
-modal opens over the read-only standings, showing the top three as ordered
-podium steps — rank 2 on the left, rank 1 center and tallest, rank 3 on the
-right, with missing ranks leaving their column empty. Ties are never collapsed
+modal opens over the read-only standings. A **Game concluded** pill and a
+top-right **Close podium** X sit above the read-only title. The top three render
+as tactile podium steps — rank 2 on the left, rank 1 center and tallest, rank 3
+on the right, with missing ranks leaving their column empty. Each contestant
+sits above its pedestal with a numbered token, a normally wrapped name, and its
+points; the pedestals carry the large rank plus **Winner**, **Silver**, and
+**Bronze**, and rank 1 wears a decorative crown. Ties are never collapsed
 (12, 12, 8 puts two players on the top step with no "Rank 2" step, and twenty
-tied players all appear in one scrolling step). Players ranked above 3 appear
-below the steps in a **Rest of the table** list in ranking order, each with
-rank, numbered token, name, and total, so the whole final table stays in the
-celebration; every player also remains visible in the full standings behind the
-modal. A brief CSS confetti animation plays and is fully
-suppressed when the system prefers reduced motion. The podium closes with one
-of three actions: the full-width primary **Play again (same players, reset
-scores)** replays right from the modal exactly like the finished view's
-button; below it sit **Close & view full standings** and **Save & exit to
-Dashboard** side by side, stacking full width on small screens. Dismiss with
-**Close & view full standings**, **Escape**, or a click on the backdrop;
-focus returns to the game heading, the standings remain unchanged, and the
-celebration never repeats when the finished game is reopened or reloaded.
+tied players all appear in one scrolling step), and the note "Ties share rank
+and step position automatically" explains the rule. Below the steps, a
+**Ranked summary** lists every player — including ranks above 3 — in ranking
+order, grouped by competition rank with rank, numbered token, name, and points;
+the steps are the celebration and the cards are the full scannable table. Every
+player also remains visible in the full standings behind the modal. A brief CSS
+confetti animation plays and is fully suppressed when the system prefers
+reduced motion. The podium closes with one of three actions: the full-width
+primary **Play again (same players, reset scores)** replays right from the
+modal exactly like the finished view's button; below it sit **Close & view
+full standings** and **Save & exit to Dashboard** side by side, stacking full
+width on small screens. Dismiss with **Close & view full standings**, the
+corner X, **Escape**, or a click on the backdrop; focus returns to the game
+heading, the standings remain unchanged, and the celebration never repeats when
+the finished game is reopened or reloaded.
 **Save & exit to Dashboard** is pure navigation: it dismisses the podium and
 opens the Dashboard with focus on its heading, listing the finished game
 under Finished games — it writes nothing. Opening the podium always focuses
@@ -259,7 +268,8 @@ Run `$feature-flow` one feature at a time. The eleven MVP features and the
 seven v2 features (`refresh-design-system`, `name-game-titles`,
 `track-game-activity`, `add-quick-score-entry`, `show-player-numbers`,
 `show-score-distribution`, and `extend-podium-actions`) are accepted and
-merged. The post-playtest refinement batch (`refine-ui-after-testing`) is
-implemented and awaiting independent validation. Any further scope
-(rounds/timers, dashboard statistics, presets, roster reuse, one-tap games)
-needs a new agreed feature first.
+merged, and the post-playtest refinement batch (`refine-ui-after-testing`) is
+accepted and merged. `refine-podium-and-history-modal` (tactile podium plus the
+Dashboard history dialog) is implemented and awaiting independent validation.
+Any further scope (rounds/timers, dashboard statistics, presets, roster reuse,
+one-tap games) needs a new agreed feature first.

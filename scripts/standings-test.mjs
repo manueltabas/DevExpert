@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createGame } from "../src/roster.js";
 import { applyScoreChange } from "../src/score.js";
-import { podiumRestRows, podiumRows, rankPlayers, scoreDistribution } from "../src/standings.js";
+import { podiumRows, rankPlayers, scoreDistribution } from "../src/standings.js";
 
 // rankPlayers: null game and missing/empty player lists
 assert.deepEqual(rankPlayers(null), []);
@@ -221,46 +221,6 @@ assert.notEqual(podiumRows(podiumCutoffGame), podiumRows(podiumCutoffGame),
 assert.ok(!("rank" in podiumCutoffGame) && podiumCutoffGame.players.every((player) => !("rank" in player)),
   "podiumRows must not store rank fields");
 
-// podiumRestRows (refine-ui-after-testing): every rank >3 row in ranking
-// order — the complement of the steps, ties preserved, guards inherited.
-assert.deepEqual(
-  podiumRestRows(podiumCutoffGame).map((row) => [row.player.id, row.rank]),
-  [["cut-4", 4], ["cut-5", 4]],
-  "10/5/5/0/0 keeps the rank-4 pair in the rest list in ranking order"
-);
-assert.deepEqual(podiumRestRows(podiumTieGame), [],
-  "when every player ranks ≤3 there is no rest list");
-assert.deepEqual(podiumRestRows(twentyTiedGame), [],
-  "twenty tied rank-1 players leave the rest list empty");
-assert.deepEqual(
-  podiumRestRows({
-    players: [
-      { id: "rest-1", name: "A", order: 0, total: 12 },
-      { id: "rest-2", name: "B", order: 1, total: 8 },
-      { id: "rest-3", name: "C", order: 2, total: 6 },
-      { id: "rest-4", name: "D", order: 3, total: 4 },
-      { id: "rest-5", name: "E", order: 4, total: 2 },
-      { id: "rest-6", name: "F", order: 5, total: 0 }
-    ]
-  }).map((row) => [row.player.id, row.rank]),
-  [["rest-4", 4], ["rest-5", 5], ["rest-6", 6]],
-  "the rest list carries every rank above 3 in ranking order"
-);
-assert.deepEqual(podiumRestRows(null), []);
-assert.deepEqual(podiumRestRows(undefined), []);
-assert.deepEqual(podiumRestRows({}), []);
-assert.deepEqual(podiumRestRows({ players: [] }), []);
-assert.deepEqual(podiumRestRows({ players: "nope" }), []);
-const beforePodiumRest = structuredClone(podiumCutoffGame);
-const firstRest = podiumRestRows(podiumCutoffGame);
-assert.deepEqual(podiumCutoffGame, beforePodiumRest, "podiumRestRows must never mutate the input game");
-assert.notEqual(podiumRestRows(podiumCutoffGame), firstRest,
-  "podiumRestRows must return a fresh array on every call");
-assert.ok(firstRest.every((row) => row.player === podiumCutoffGame.players.find((player) => player.id === row.player.id)),
-  "rest rows reference the original player objects");
-assert.ok(!("rank" in podiumCutoffGame) && podiumCutoffGame.players.every((player) => !("rank" in player)),
-  "podiumRestRows must not store rank fields");
-
 // scoreDistribution: mockup parity — 42/35/28/19 of 124 rounds to 34/28/23/15
 // (floors 33/28/22/15 = 98; remainders .87/.23/.58/.32 top up Alex and Jamie).
 const mockupGame = {
@@ -423,4 +383,4 @@ assert.notEqual(scoreDistribution(mockupGame), scoreDistribution(mockupGame),
 assert.notEqual(scoreDistribution(mockupGame).rows, scoreDistribution(mockupGame).rows,
   "the rows array must be fresh on every call");
 
-console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, podiumRows eligibility (ties never collapsed, rank-4 excluded from steps) plus podiumRestRows (>3 rows in ranking order, ties, guards, fresh arrays), scoreDistribution largest-remainder shares (mockup 34/28/23/15, naive-rounding counterexample 23/22/22/11/11/11, tie top-up 34/33/33, mixed-sign positive-only shares, zero-total omission, 0% retention, degenerate/guard cases, sum-100 invariants), and read-only input handling.");
+console.log("Standings tests passed: competition ranking with shared ranks, creation-order ties, descending totals, 20-player games, re-rank after applyScoreChange, podiumRows eligibility (ties never collapsed, rank >3 excluded from steps), scoreDistribution largest-remainder shares (mockup 34/28/23/15, naive-rounding counterexample 23/22/22/11/11/11, tie top-up 34/33/33, mixed-sign positive-only shares, zero-total omission, 0% retention, degenerate/guard cases, sum-100 invariants), and read-only input handling.");

@@ -91,6 +91,8 @@ async function readPodiumActions(cdp) {
     const dialog = document.querySelector("[data-podium-dialog]");
     const body = dialog?.querySelector(".podium-body");
     const buttons = body ? [...body.querySelectorAll("button")] : [];
+    const actionButtons = body ? [...body.querySelectorAll(".podium-actions button")] : [];
+    const corner = body?.querySelector("[data-action='close-podium-corner']");
     const actionsBlock = body?.querySelector(".podium-actions");
     const row = body?.querySelector(".podium-actions-row");
     const primary = body?.querySelector("[data-action='podium-play-again']");
@@ -123,7 +125,15 @@ async function readPodiumActions(cdp) {
       present: Boolean(dialog),
       open: Boolean(dialog?.open),
       buttonCount: buttons.length,
-      actions: buttons.map((button) => ({
+      actionCount: actionButtons.length,
+      corner: corner ? {
+        action: corner.dataset.action ?? null,
+        label: corner.textContent.trim(),
+        ariaLabel: corner.getAttribute("aria-label"),
+        type: corner.getAttribute("type"),
+        rect: rect(corner)
+      } : null,
+      actions: actionButtons.map((button) => ({
         action: button.dataset.action ?? null,
         label: button.textContent.trim(),
         type: button.getAttribute("type"),
@@ -351,10 +361,18 @@ function assertOriginalEntryByteIdentical(raw, originalId, expectedString, label
 function assertActionContract(podium, widthLabel, { assertInitialFocus = true } = {}) {
   assert.equal(podium.present, true, `${widthLabel}: the podium dialog must render`);
   assert.equal(podium.open, true, `${widthLabel}: the podium must be modal-open via showModal`);
-  assert.equal(podium.buttonCount, 3, `${widthLabel}: the podium must offer exactly three buttons`);
+  assert.equal(podium.actionCount, 3, `${widthLabel}: the podium must offer exactly three product actions`);
+  assert.equal(podium.buttonCount, 4,
+    `${widthLabel}: the corner X is the fourth button but not a fourth product action`);
   assert.deepEqual(podium.actions.map((button) => button.action),
     EXPECTED_ACTIONS.map((expected) => expected.action),
     `${widthLabel}: the three actions must render in Decision 1 DOM order`);
+  assert.equal(podium.corner.action, "close-podium-corner", `${widthLabel}: the corner X keeps its distinct hook`);
+  assert.equal(podium.corner.label, "", `${widthLabel}: the corner X uses an icon, not visible copy`);
+  assert.equal(podium.corner.ariaLabel, "Close podium", `${widthLabel}: the corner X has the Close podium label`);
+  assert.equal(podium.corner.type, "button", `${widthLabel}: the corner X must be type="button"`);
+  assert.ok(podium.corner.rect.height >= 44 && podium.corner.rect.width >= 44,
+    `${widthLabel}: the corner X needs a >=44px target`);
   for (const [index, expected] of EXPECTED_ACTIONS.entries()) {
     const button = podium.actions[index];
     assert.equal(button.label, expected.label, `${widthLabel}: the ${expected.action} label must be exact`);
@@ -481,6 +499,7 @@ async function runClosePaths(cdp, { consoleProblems }) {
   const closePathGames = [
     { title: "Close click", activate: async (cdpClient) => click(cdpClient, "[data-action='close-podium']") },
     { title: "Enter close", activate: async (cdpClient) => pressEnter(cdpClient) },
+    { title: "Corner close", activate: async (cdpClient) => click(cdpClient, "[data-action='close-podium-corner']") },
     { title: "Escape close", activate: async (cdpClient) => pressEscape(cdpClient) },
     { title: "Backdrop close", activate: async (cdpClient) => clickBackdrop(cdpClient, 8, 400) },
     { title: "Space close", activate: async (cdpClient) => pressSpace(cdpClient) }
@@ -510,8 +529,22 @@ async function runClosePaths(cdp, { consoleProblems }) {
   }
 
   const home = await readHomeState(cdp);
-  assert.equal(home.finishedCards.length, 5, "all five finished games must be listed once");
+  assert.equal(home.finishedCards.length, 5, "the preview lists the five most recent finished games");
   assert.equal(home.unfinishedCards.length, 0, "no phantom unfinished cards may appear");
+  // The six games are all reachable through the finished history dialog
+  // (refine-podium-and-history-modal replaced the inline expansion).
+  await click(cdp, "[data-action='view-all-finished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  const historyCount = await evaluate(cdp, () => ({
+    cards: document.querySelectorAll("[data-history-dialog] .saved-game").length,
+    title: document.getElementById("history-dialog-title")?.textContent?.trim() ?? null,
+    count: document.getElementById("history-dialog-count")?.textContent?.trim() ?? null
+  }));
+  assert.equal(historyCount.title, "All finished games");
+  assert.equal(historyCount.count, "6 saved games");
+  assert.equal(historyCount.cards, 6, "all six finished games are listed once in the history dialog");
+  await click(cdp, "[data-action='close-history']");
+  await waitForAbsent(cdp, "[data-history-dialog]");
 
   await click(cdp, `[data-action='view-results'][data-game-id='${home.finishedCards[0].gameId}']`);
   await waitForSelector(cdp, "[data-finished-note]");
@@ -780,7 +813,7 @@ async function main() {
     await runSession("exit-dashboard", runExitDashboard);
     await runSession("podium-replay", runPodiumReplay);
 
-    console.log("Browser podium-actions test passed: the finish podium offers exactly three type=button actions in DOM order — the full-width primary 'Play again (same players, reset scores)' (podium-play-again) above the side-by-side secondaries 'Close & view full standings' (the unchanged close-podium hook) and 'Save & exit to Dashboard' (podium-exit-dashboard), stacked full width at 320x720, all targets >=44px, every visible label doubling as the accessible name with no aria-label override, initial focus on the dismiss control, and the frozen title/lede/game-title line, Player {n} tokens, 14-piece aria-hidden confetti, visible standings, and byte-identical payload while open; the close hook (click, Enter, Escape, real backdrop click, and Space) still lands on the read-only standings with heading focus and byte-identical storage and no re-celebration on reopen; Save & exit dismisses and navigates home with focus on the Dashboard heading, aria-current on nav-dashboard, the finished card listed, zero writes (byte-identity proof) and no phantom cards, including a 320px Tab+Enter real-key walk; podium Play again delegates to the unchanged handlePlayAgain (separate untitled zero-score replay-game-* entry, original byte-identical across the replay and its scoring, reload listing both games correctly) and the detached-dialog close guard keeps a second podium in the same document lifetime open and dismissable; no uncaught console errors in any session.");
+    console.log("Browser podium-actions test passed: the finish podium offers exactly three type=button product actions in DOM order — the full-width primary 'Play again (same players, reset scores)' (podium-play-again) above the side-by-side secondaries 'Close & view full standings' (the unchanged close-podium hook) and 'Save & exit to Dashboard' (podium-exit-dashboard) — plus the separate 44px corner X ('Close podium', close-podium-corner) that dismisses through the same funnel without changing the action contract; actions stack full width at 320x720, all targets >=44px, every product label doubles as its accessible name with no aria-label override, initial focus stays on the footer dismiss control, and the frozen title/lede/game-title line, Player {n} tokens, 14-piece aria-hidden confetti, visible standings, and byte-identical payload hold while open; the close hook (click, Enter, corner X, Escape, real backdrop click, and Space) still lands on the read-only standings with heading focus and byte-identical storage and no re-celebration on reopen; Save & exit dismisses and navigates home with focus on the Dashboard heading, aria-current on nav-dashboard, the finished card listed, zero writes (byte-identity proof) and no phantom cards, including a 320px Tab+Enter real-key walk; podium Play again delegates to the unchanged handlePlayAgain (separate untitled zero-score replay-game-* entry, original byte-identical across the replay and its scoring, reload listing both games correctly) and the detached-dialog close guard keeps a second podium in the same document lifetime open and dismissable; no uncaught console errors in any session.");
     console.log(`Browser evidence screenshots: ${[
       contract.desktopScreenshot,
       contract.mobileScreenshot,

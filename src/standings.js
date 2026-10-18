@@ -27,14 +27,6 @@ export function podiumRows(game) {
   return rankPlayers(game).filter((row) => row.rank <= 3);
 }
 
-// "Rest of the table" (refine-ui-after-testing): every ranked row above the
-// podium steps, in ranking order. Pure and display-only — guards come from
-// rankPlayers, the input is never mutated, and every call returns a fresh
-// array referencing the original player objects.
-export function podiumRestRows(game) {
-  return rankPlayers(game).filter((row) => row.rank > 3);
-}
-
 // Score distribution (show-score-distribution): a derived, display-only view
 // over the current totals — computed at render time, never persisted. Eligible
 // rows are the players with a positive finite total in rankPlayers display

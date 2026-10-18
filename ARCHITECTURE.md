@@ -38,9 +38,7 @@ changes as `{ change, player }` pairs, newest first, skipping entries whose
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
 creation-order ties, `podiumRows(game)`, which filters that ranking to
-every row with rank ≤ 3 without collapsing ties or mutating its input,
-`podiumRestRows(game)`, the complementary filter for rows ranked above 3 in
-ranking order (fresh array, guards inherited from `rankPlayers`), and
+every row with rank ≤ 3 without collapsing ties or mutating its input, and
 `scoreDistribution(game)`, the pure view behind the active leaderboard's score
 distribution block: it returns `{ gameTotal, rows }` where `gameTotal` is the
 signed sum of all finite player totals and `rows` lists one
@@ -75,10 +73,13 @@ successful game mutation (start, save points, undo, finish, rename, replay),
 renders
 the home "Unfinished games" list from the active saved games and the
 "Finished games" list from the finished ones. Each panel renders only its five
-most recent games (`PANEL_PREVIEW_LIMIT`) until a transient per-panel
-`state.showAllActiveGames`/`state.showAllFinishedGames` boolean expands it
-through a `View all (N)` / `Show latest 5` toggle; the slice is render-time only,
-toggling never writes, and the booleans reset at every Dashboard arrival. The
+most recent games (`PANEL_PREVIEW_LIMIT`); above five, a `View all (N)` opener
+with `aria-haspopup="dialog"` opens a per-panel history modal driven by the
+transient `state.historyDialog` string (`null | "active" | "finished"`), which
+lists every game of that status in the accepted `orderSavedGamesForDisplay`
+order using the same card renderers and Resume/View results handlers. Opening
+and closing are render-time only (the string resets at every Dashboard
+arrival), never write storage, and the preview stays visible behind the modal. The
 view root (`[data-app-root]`) is a grid with a 32px desktop gap (20px stacked),
 so the hero and dashboard panels share the same separator; the old
 `.home-layout` gap was inert because both blocks live inside `#app`. It
@@ -160,45 +161,73 @@ view through the same resume path.
 The podium celebration is the app's display-only modal layer. A successful
 confirm-finish sets a transient `state.podiumOpen` flag (reset wherever the
 finish prompt resets, so reopening, View results, or reloading never
-re-celebrates), and `renderFinishedGame` then renders the app's only `<dialog>`
-— a `.podium-dialog` opened with `showModal()` (guarded) that derives its
-content at render time from `podiumRows(state.activeGame)`: a muted
-`.podium-game-title` line showing `displayGameTitle(game)` as the first
-content element (before the suite-frozen "Final podium" title), an ordered
+re-celebrates), and `renderFinishedGame` then renders the app's primary
+`<dialog>` — a `.podium-dialog` opened with `showModal()` (guarded) that derives
+its content at render time from `podiumRows(state.activeGame)` plus
+`rankPlayers(state.activeGame)`. Inside `.podium-body` the order is: a
+`.podium-topline` holding the non-paragraph `Game concluded` pill and the 44px
+corner X (`close-podium-corner`, accessible name "Close podium", inline SVG
+`aria-hidden`) — deliberately a second dismiss affordance rather than a fourth
+product action; the muted `.podium-game-title` line (still the first content
+paragraph); the suite-frozen "Final podium" heading and lede; an ordered
 `aria-label="Podium steps"` list of `.podium-step` items with `data-rank` and
-every tied player included (empty rank steps omitted), and a
-`Rest of the table` section below the steps built from `podiumRestRows(game)`
-when any player ranks above 3 — ranking order, distinct `.podium-rest-row`
-classes, rank/token/name/total, no focusable controls. Desktop CSS places
-rank 2 in the first column, rank 1 center and tallest, rank 3 in the third
-column on a common bottom baseline; at ≤600px the steps stack in rank order.
-Tokens/rows/aria-labels reuse the accepted conventions, and a decorative
-`aria-hidden` confetti layer of 14 deterministic pieces animated
-by one CSS `@keyframes` rule (single iteration, ends invisible) that a
-`prefers-reduced-motion: reduce` rule suppresses with `display: none`. The
-dialog is labelled (`aria-labelledby`) and described (`aria-describedby`),
-opens with focus on its dismiss control, and dismisses through that control
-("Close & view full standings", `close-podium`), Escape (native `cancel`,
-prevented and routed through the shared path), or a backdrop click
-(`event.target === dialog`) — all funneling into one idempotent cleanup that
-clears the flag, re-renders the finished view without the dialog, and returns
-focus to the game heading. Because Chrome dispatches the dialog `close` event
-as a queued task that can be delayed (and starved on hidden pages), dismissal
-cleanup does not depend on that event alone; the `close` listener remains as
-the idempotent fallback that ignores events delivered for a detached dialog.
-Since `extend-podium-actions` the podium body ends in a three-action block
-(`.podium-actions`): the full-width primary **Play again (same players, reset
-scores)** (`podium-play-again`) above a `.podium-actions-row` grid of the two
-secondary exits — the unchanged `close-podium` hook and `podium-exit-dashboard`
-— which stack full width at ≤480px. The primary's wrapper guards on
-`state.podiumOpen`, closes the live dialog, and delegates to the unchanged
-`handlePlayAgain()` (its queued `close` event is ignored by the detached-dialog
-guard once the replay re-render replaces the dialog — the Scenario 6
-two-podium stale-close protection). `handlePodiumExitDashboard()` mirrors the
-accepted active-view back-home reset verbatim and lands focus on
-`[data-home-heading]`; it is pure navigation and never writes. The celebration
-writes nothing: opening, dismissing, and exiting trigger no save, and the
-stored payload stays byte-identical.
+every tied player included (empty rank steps omitted); the exact tie note
+"Ties share rank and step position automatically"; a `.podium-summary`
+(`aria-label="Ranked summary"`) listing *every* player in ranking order in
+competition-rank groups (the steps are the celebration; the cards are the
+scannable full table — this superseded the earlier Rest of the table list);
+and the three-action block. Each step renders a visually hidden
+`Rank N` heading, an aria-hidden crown for rank 1, a `.podium-players` list of
+contestant cards (hidden rank, numbered token, readable name, raw total plus a
+visible `pts` label and the frozen total aria-label), and a `.podium-pedestal`
+with the large rank and exactly `Winner`/`Silver`/`Bronze`. Desktop CSS places
+rank 2 in the first column, rank 1 center with the tallest (144/96/72px)
+pedestal, and rank 3 in the third column on a common bottom baseline; at
+≤600px the steps stack in rank order with compact pedestals and the dialog
+keeps its internal scroll. A decorative `aria-hidden` confetti layer of 14
+deterministic pieces animated by one CSS `@keyframes` rule (single iteration,
+ends invisible) is suppressed by `prefers-reduced-motion: reduce` with
+`display: none`. The dialog is labelled (`aria-labelledby`) and described
+(`aria-describedby`), opens with focus on the footer dismiss control
+(`close-podium`) without scrolling the stage away from the top: `dialog.scrollTop`
+is reset to 0 before and after `focus({ preventScroll: true })`, so the pill,
+title, crown, and rank-1 step start are visible on open at desktop and narrow
+sizes, and dismisses through that control ("Close & view full
+standings"), the corner X, Escape (native `cancel`, prevented and routed
+through the shared path), or a backdrop click (`event.target === dialog`) — all
+funneling into one idempotent cleanup that clears the flag, re-renders the
+finished view without the dialog, and returns focus to the game heading.
+Because Chrome dispatches the dialog `close` event as a queued task that can be
+delayed (and starved on hidden pages), dismissal cleanup does not depend on
+that event alone; the `close` listener remains as the idempotent fallback that
+ignores events delivered for a detached dialog. Since `extend-podium-actions`
+the podium body ends in a three-action block (`.podium-actions`): the full-width
+primary **Play again (same players, reset scores)** (`podium-play-again`) above
+a `.podium-actions-row` grid of the two secondary exits — the unchanged
+`close-podium` hook and `podium-exit-dashboard` — which stack full width at
+≤480px. The primary's wrapper guards on `state.podiumOpen`, closes the live
+dialog, and delegates to the unchanged `handlePlayAgain()` (its queued `close`
+event is ignored by the detached-dialog guard once the replay re-render
+replaces the dialog — the two-podium stale-close protection).
+`handlePodiumExitDashboard()` mirrors the accepted active-view back-home reset
+verbatim and lands focus on `[data-home-heading]`; it is pure navigation and
+never writes. The celebration writes nothing: opening, dismissing, and exiting
+trigger no save, and the stored payload stays byte-identical.
+
+The Dashboard history modal is the app's second `<dialog>` layer. The two
+panel openers (`view-all-unfinished`/`view-all-finished`) render only above
+`PANEL_PREVIEW_LIMIT` and carry `aria-haspopup="dialog"` (no `aria-expanded`
+or `aria-controls`); activating one sets `state.historyDialog` and
+`renderHistoryDialog(kind)` emits a `.history-dialog` labelled by
+`history-dialog-title` and described by the `{N} saved games` count line, with
+a 44px `close-history` control and a dialog-scoped list rendered by the
+generalized saved/finished card list renderers. `bindHistoryEvents` opens it
+with `showModal()`, focuses the close control, and funnels the close button,
+Escape, and backdrop click through one synchronous cleanup that clears the
+string, re-renders home, and returns focus to that panel's opener (the same
+detached-dialog `close` guard applies). Resuming or viewing results from inside
+the dialog re-renders the destination view and resets the flag; opening,
+closing, and focus movement never write storage or change `updatedAt`.
 
 The top navigation is the app's display/state-only shell layer. `index.html`
 renders a static app bar on every screen — brand block (marker dots, "Game
@@ -264,8 +293,8 @@ persistence slice is implemented.
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
   games list, the storage-health notices with the write-safety rule, the
-  dismissible podium dialog with ordered steps, the rest-of-the-table list,
-  and confetti, the inline active-header title edit form with its save
+  dismissible podium dialog with tactile steps, pedestals, the ranked summary,
+  and confetti, the Dashboard history dialogs, the inline active-header title edit form with its save
   trigger, the `beforeinput` entry guard that keeps the score field to plain
   signed-integer drafts, the shared quick-counter/stepper draft helper
   (`applyDraftDelta`, no render or save), the dashboard five-game preview and
@@ -293,8 +322,7 @@ persistence slice is implemented.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
   the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
-  never collapsed), the complementary `podiumRestRows` (rank > 3 in ranking
-  order), and the score-distribution derivation `scoreDistribution`
+  never collapsed), and the score-distribution derivation `scoreDistribution`
   (positive-total rows in display order, largest-remainder integer percents
   over the positive-total sum, signed `gameTotal`, guards, no mutation).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
@@ -422,16 +450,21 @@ persistence slice is implemented.
    320×720 and 1280×800; and blocked-write in-memory staging/save with the
    unchanged notice plus zero counters/stepper in finished and active-empty
    views — using isolated headless Chrome.
-- `scripts/browser-refine-ui-test.mjs`: desktop/mobile post-playtest refinement
-   checks — the Dashboard five-game preview with per-panel View all (N)/Show
-   latest 5 toggles (aria-expanded/aria-controls, focus, byte-identical
-   storage, no toggle ≤5), pill removal, 32px desktop gutter and top
-   separator, 320px stacking;
-   staged combined counter drafts and whole-row selection with inert finished
-   rows; the header Finish game opener and prompt placement; the five-row
-   Recent entries cap; ordered podium steps with the ranking-order Rest of the
-   table list, ties, missing ranks, and 20 tied players; and the single-track
-   full-width finished layout — using isolated headless Chrome.
+- `scripts/browser-refine-ui-test.mjs`: desktop/mobile refinement checks — the
+   Dashboard five-game preview with per-panel View all (N) openers
+   (aria-haspopup=dialog, no aria-expanded/aria-controls), the full-history
+   dialog for both panels (all cards in order, close/Escape/backdrop focus
+   return to the opener, byte-identical storage, no opener ≤5, 320px internal
+   scroll and single-column cards), pill removal, 32px desktop gutter and top
+   separator, 320px stacking; staged combined counter drafts and whole-row
+   selection with inert finished rows; the header Finish game opener and prompt
+   placement; the five-row Recent entries cap; tactile podium steps with
+   Winner/Silver/Bronze pedestals, crown, pill, corner X, tie note, and
+   all-player ranked summary cards, ties/missing ranks/20 tied players, the
+   open-at-top contract (scrollTop 0 with the title/pill/rank-1 crown visible at
+   1280x800 and 320x720), the
+   corner dismissal path, and the single-track full-width finished layout —
+   using isolated headless Chrome.
 - `scripts/browser-player-numbers-test.mjs`: desktop/mobile player-number
    badge checks — positional setup rows that renumber on removal with the
    accepted positional labels; badges 1..N in setup order on the leaderboard,
@@ -524,10 +557,10 @@ interplay is unchanged: finishing still proceeds in memory when writes are
 suppressed or fail, and no phantom finished card can appear on home. The
 podium celebration sits on top of that finished view as a display-only modal:
 it opens only on a successful confirm-finish (including under storage
-failures), shows every rank ≤ 3 player in ordered steps with ties never
-collapsed and every rank >3 player in the ranking-order Rest of the table
-list, dismisses back to the heading without changing anything, and never
-reopens on a mere revisit. The `close`-event fallback listener ignores events delivered for a
+failures), shows every rank ≤ 3 player in ordered tactile steps with ties
+never collapsed, lists every player in the ranked summary cards, dismisses
+back to the heading without changing anything, and never reopens on a mere
+revisit. The `close`-event fallback listener ignores events delivered for a
 dialog that has already left the DOM: Chrome queues `close` as a task that can
 arrive late on hidden pages, and a stale event from a dismissed podium must
 never clobber a later podium's open state (finish → dismiss → replay → finish

@@ -204,11 +204,17 @@
 - The podium celebration is display only and must never touch saved data: it
   is derived at render time from `podiumRows` for the ordered steps (every
   player whose competition rank is ≤ 3, ties never collapsed, empty rank
-  steps omitted) and from the pure `podiumRestRows` helper for a
-  ranking-order `Rest of the table` list of every rank >3 player (rank,
-  token, name, total; distinct `.podium-rest-row` classes, no focusable
-  controls). Desktop steps place rank 2 left, rank 1 center and tallest, rank
-  3 right on a common bottom baseline; at ≤600px they stack in rank order.
+  steps omitted) and from `rankPlayers` for a `.podium-summary` of *every*
+  player in ranking order, grouped by competition rank (the ranked cards
+  superseded the Rest of the table list; the steps remain the celebration and
+  the cards are the full scannable table). Each step renders a visually hidden
+  `Rank N` heading, a crown for rank 1, contestant cards with token, readable
+  name, raw total and a visible `pts` label, and a pedestal carrying the large
+  rank plus exactly `Winner`/`Silver`/`Bronze`. Desktop steps place rank 2
+  left, rank 1 center and tallest, rank 3 right on a common bottom baseline
+  with 144/96/72px pedestals; at ≤600px they stack in rank order with compact
+  pedestals. The exact note "Ties share rank and step position automatically"
+  renders between the steps and the summary.
   The dialog opens only on a successful confirm-finish — including under
   storage failure or invalid-read suppression — and never opens when a
   finished game is merely resumed, viewed, or reloaded. Opening and
@@ -216,16 +222,24 @@
   `saveGames` call, no mutation of `state.savedGames`, and no persisted
   podium/celebration fields; the stored payload must stay byte-identical
   across open and dismiss.
-- The podium offers exactly three locked actions after the steps and rest list, and
-  every action's visible label is its accessible name (no `aria-label`
-  override): the full-width primary `podium-play-again` "Play again (same
-  players, reset scores)", the `close-podium` dismiss control "Close & view
-  full standings" (kept as the dismissal hook), and `podium-exit-dashboard`
-  "Save & exit to Dashboard"; all are `type="button"`, the two secondaries
-  share one side-by-side row that stacks full width at ≤480px, every target
-  is ≥44px, and opening the podium always focuses the dismiss control. The
-  dismiss control, Escape, and backdrop clicks always land on the read-only
-  standings with focus on the game heading. "Save & exit to Dashboard" is
+- The podium offers exactly three locked product actions after the steps and
+  ranked summary, and every action's visible label is its accessible name (no
+  `aria-label` override): the full-width primary `podium-play-again` "Play
+  again (same players, reset scores)", the `close-podium` dismiss control
+  "Close & view full standings" (kept as the dismissal hook), and
+  `podium-exit-dashboard` "Save & exit to Dashboard"; all are `type="button"`,
+  the two secondaries share one side-by-side row that stacks full width at
+  ≤480px, every target is ≥44px, and opening the podium always focuses the
+  footer dismiss control without scrolling the dialog away from the top:
+  reset `dialog.scrollTop = 0` before and after
+  `focus({ preventScroll: true })` so the pill, title, crown, and rank-1 step
+  start are visible on open at desktop and narrow sizes. The `Game concluded`
+  pill and the 44px corner X
+  (`close-podium-corner`, accessible name "Close podium") are not product
+  actions: the X is a second dismiss affordance routed through the same
+  funnel. The dismiss control, the corner X, Escape, and backdrop clicks
+  always land on the read-only standings with focus on the game heading.
+  "Save & exit to Dashboard" is
   navigation only — it mirrors the accepted back-home reset and focuses the
   Dashboard heading without ever writing storage — and the podium replay
   action must delegate to the unchanged `handlePlayAgain` (guarded close,
@@ -292,13 +306,19 @@
   action moves focus to the destination view's primary heading.
 - The Dashboard previews five games per panel (`PANEL_PREVIEW_LIMIT`) from the
   existing `orderSavedGamesForDisplay` list. Above five, each panel renders one
-  `View all (N)` / `Show latest 5` toggle below its list with
-  `aria-expanded`, `aria-controls` pointing at that panel's stable list id, a
-  ≥44px target, and a visible label that is a substring of the accessible
-  name. The expansion state is two transient booleans (reset at every
-  Dashboard arrival); toggling re-renders and refocuses the toggle but must
-  never write storage, change `updatedAt`, or alter the persisted payload.
-  At ≤5 games there is no toggle and no wrapper. The hero must not render the
+  `View all (N)` opener below its list with `aria-haspopup="dialog"`, no
+  `aria-expanded`/`aria-controls`, a ≥44px target, and a visible label that is
+  a substring of the accessible name. The opener sets the one transient string
+  `state.historyDialog` (`null | "active" | "finished"`, reset at every
+  Dashboard arrival) and opens a `.history-dialog` listing every game of that
+  status in the accepted most-recent-first order with the same cards and
+  Resume/View results handlers, labelled by `history-dialog-title` and
+  described by an `{N} saved games` count line. Closing via the 44px close
+  control, Escape, or a backdrop click funnels through one synchronous cleanup
+  and returns focus to that panel's opener; the preview stays visible behind
+  the modal. Opening, closing, navigating, and focus movement must never write
+  storage, change `updatedAt`, or alter the persisted payload. At ≤5 games
+  there is no opener, no wrapper, and no dialog. The hero must not render the
   old "Local to this browser" pill; the retention note stays. The gap between
   the hero and the dashboard is 32px at desktop and 20px when stacked, using
   the `[data-app-root]` grid gap (the `.home-layout` gap alone is inert because
