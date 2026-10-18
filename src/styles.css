@@ -294,6 +294,14 @@ h3 {
   gap: 20px;
 }
 
+/* The home view renders the hero and dashboard inside #app, so the
+   home-layout gap above never separated the top hero from the panels.
+   Keep every view root spaced; only the home view has two top-level blocks. */
+[data-app-root] {
+  display: grid;
+  gap: var(--space-xl);
+}
+
 .hero-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -401,10 +409,12 @@ h3 {
   border: 1px solid rgba(0, 80, 159, 0.24);
 }
 
+/* Dashboard panel gutter (refine-ui-after-testing): 32px at desktop, with the
+   ≤720px single-column rule resetting to the existing 20px. No divider line. */
 .dashboard-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 20px;
+  gap: var(--space-xl);
 }
 
 .panel {
@@ -588,6 +598,18 @@ h3 {
   justify-self: end;
 }
 
+/* Per-panel preview disclosure (refine-ui-after-testing): a ≥44px secondary
+   action below the capped list; transient state only, no divider. */
+.panel-toggle-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: var(--space-md);
+}
+
+.panel-toggle {
+  min-width: 44px;
+}
+
 .retention-note {
   margin: var(--space-md) 0 0;
   color: var(--muted);
@@ -619,6 +641,12 @@ h3 {
 .active-layout {
   grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
   align-items: start;
+}
+
+/* Finished views render no score panel, so the standings span the full
+   content width instead of reserving an empty right column. */
+.active-layout.is-finished {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .active-board {
@@ -836,6 +864,12 @@ h3 {
   font-variant-numeric: tabular-nums;
   font-weight: 800;
   text-align: right;
+}
+
+/* Active rows are click-to-select (refine-ui-after-testing); finished rows
+   (.is-final) stay inert with no pointer affordance. */
+.active-player:not(.is-final) {
+  cursor: pointer;
 }
 
 .active-player.is-selected {
@@ -1077,10 +1111,15 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* Finish game (refine-ui-after-testing): the opener lives in the active
+   header; when open, the unchanged prompt wrapper renders below the header
+   and above the leaderboard panel inside .active-board. */
+.finish-opener {
+  flex: 0 0 auto;
+}
+
 .finish-section {
-  margin-top: var(--space-md);
-  padding-top: var(--space-md);
-  border-top: 1px solid var(--border);
+  min-width: 0;
 }
 
 .replay-section {
@@ -1220,16 +1259,42 @@ h3 {
   overflow-wrap: anywhere;
 }
 
+/* Ordered podium steps (refine-ui-after-testing): rank 2 sits left, rank 1
+   center and tallest, rank 3 right, all on a common bottom baseline. Missing
+   ranks simply leave their column empty; ≤600px restacks in rank order. */
 .podium-groups {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: end;
   gap: 12px;
   margin: var(--space-md) 0 0;
   padding: 0;
   list-style: none;
 }
 
+.podium-step[data-rank="1"] {
+  grid-column: 2;
+  grid-row: 1;
+  min-height: 240px;
+}
+
+.podium-step[data-rank="2"] {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 180px;
+}
+
+.podium-step[data-rank="3"] {
+  grid-column: 3;
+  grid-row: 1;
+  min-height: 150px;
+}
+
 .podium-group {
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
   margin: 0;
   padding: 12px;
   background: var(--surface-container);
@@ -1239,6 +1304,18 @@ h3 {
 
 .podium-group.is-rank-one {
   background: var(--surface-strong);
+}
+
+@media (max-width: 600px) {
+  .podium-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .podium-step[data-rank] {
+    grid-column: auto;
+    grid-row: auto;
+    min-height: 0;
+  }
 }
 
 .podium-rank-heading {
@@ -1288,6 +1365,59 @@ h3 {
   text-align: right;
 }
 
+/* "Rest of the table" (refine-ui-after-testing): rank >3 players below the
+   steps, ranking order, no focusable controls, distinct row classes. */
+.podium-rest {
+  margin-top: var(--space-md);
+}
+
+.podium-rest-title {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+.podium-rest-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.podium-rest-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--surface-container);
+  border: 1px solid var(--border-cool);
+  border-radius: 10px;
+}
+
+.podium-rest-rank {
+  min-width: 2ch;
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
+.podium-rest-name {
+  min-width: 0;
+  font-size: var(--text-label-md);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.podium-rest-total {
+  min-width: 40px;
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  text-align: right;
+}
+
 /* Podium actions (extend-podium-actions): the primary replay control spans
    the full width above a side-by-side row of the two secondary exits. Labels
    wrap so the longer copy never forces the dialog wider at any viewport. */
@@ -1330,6 +1460,21 @@ h3 {
     min-width: 40px;
     font-size: 1.15rem;
   }
+
+  .podium-rest-row {
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .podium-rest-rank {
+    min-width: 1.5ch;
+    font-size: 1rem;
+  }
+
+  .podium-rest-total {
+    min-width: 34px;
+    font-size: 1rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1370,8 +1515,13 @@ h3 {
     justify-content: flex-start;
   }
 
+  [data-app-root] {
+    gap: 20px;
+  }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
+    gap: 20px;
   }
 
   .setup-layout {
@@ -1494,7 +1644,8 @@ h3 {
    accepted layout changes. The edit form takes a full row below it. */
 @media (max-width: 720px) {
   .active-header:has(.title-edit-action),
-  .active-header:has(.title-edit-form) {
+  .active-header:has(.title-edit-form),
+  .active-header:has(.finish-opener) {
     flex-wrap: wrap;
   }
 
@@ -1508,11 +1659,16 @@ h3 {
   .title-edit-action {
     width: 100%;
   }
+
+  .finish-opener,
+  .finish-opener .finish-action {
+    width: 100%;
+  }
 }
 
 /* Recent entries panel (track-game-activity): a display-only log of the
-   newest score changes inside the active view's score panel, between the
-   score form and the finish section. No interactive controls, no motion. */
+   newest score changes inside the active view's score panel, as its last
+   block after the score form. No interactive controls, no motion. */
 .recent-entries {
   margin-top: var(--space-md);
   min-width: 0;

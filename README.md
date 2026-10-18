@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, score-distribution, and podium-actions flows.
+- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, score-distribution, podium-actions, and refine-ui flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -45,9 +45,10 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:design-system`: run only the Chrome v2 visual-system checks (tokens, font fallback, navigation, responsive layout).
 - `npm run test:browser:game-title`: run only the Chrome game-title checks (optional setup title, auto-labels, inline editing, frozen finished titles, untitled replays).
 - `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
-- `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (immediate preset applies, staged stepper drafts, draft interaction, focus contract, storage identity).
+- `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (shared staged draft, combined Save, focus contract, storage identity).
 - `npm run test:browser:player-numbers`: run only the Chrome player-number badge checks (setup renumbering, badges across every roster surface, rank independence, resume/replay stability, corrupt-marker degradation).
 - `npm run test:browser:score-distribution`: run only the Chrome score-distribution checks (share math and rounding invariants, live re-derivation on save/undo/reorder, zero/negative treatment, surface exclusion, responsive and accessibility baseline).
+- `npm run test:browser:refine-ui`: run only the Chrome post-playtest refinement checks (dashboard preview/toggle, staged counters, row selection, header finish, recent cap, podium steps/rest, finished full width).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
@@ -70,12 +71,15 @@ with a clear message. For fast scoring, a **− / +** stepper flanks the amount
 field: each press nudges the pending draft by 1 (starting from zero when the
 field is empty), clamps at the same ±1,000,000 bounds, and never saves by
 itself — choose **Save points** to apply the stepped draft. Beside the helper
-text, seven **quick tap counters** (+1, +5, +10, +25, −1, −5, −10) apply their
-signed amount to the selected player immediately, exactly as if the amount had
-been typed and saved: same validation, same confirmation message, same
-leaderboard re-rank, same storage rules, same undo — a mis-tap is one tap on
-**Undo last score**. Tapping a counter discards any typed draft rather than
-adding to it. Choose
+text, seven **quick tap counters** (+1, +5, +10, +25, −1, −5, −10) add their
+signed amount to that same pending draft: a typed `12` followed by `+5` shows
+`17`, counter taps accumulate, and an empty field starts from the preset. A
+tap changes only the draft — totals, ranks, feedback, recent entries, and
+stored data stay untouched — so repeated taps stay quick; **Save points**
+applies the combined draft as one ordinary score change (one change-log entry,
+one save) with the usual validation, confirmation message, leaderboard re-rank,
+and storage rules, and **Undo last score** reverses it like any other change.
+Choose
 **Undo last score** to reverse the most recent change: the affected player's
 total is restored, ranks correct themselves, and repeated presses walk backward
 through the history one change at a time; undoing with an empty history
@@ -130,6 +134,10 @@ again** starts the rematch untitled (under its own auto-label) instead of
 copying the original name. Games saved before this feature keep displaying
 their stored titles exactly as saved.
 
+The dashboard hero no longer carries the old "Local to this browser" pill;
+the retention note under the unfinished list still explains that games live
+only in this browser.
+
 Every screen shares the v2 visual system: a warm ivory canvas with
 cool-tinted rounded cards, Plus Jakarta Sans typography (linked from Google
 Fonts with the system stack as a fallback, so the app renders normally when
@@ -149,7 +157,12 @@ replaying a finished game — is saved to this browser's
 local storage, so reloading the page never loses a game in progress. The home
 screen's **Unfinished games** panel lists each saved game with its title,
 player count, player names and color markers, and an "Updated" timestamp,
-most recently updated first; each card's **Resume** control reopens the game
+most recently updated first. The hero and the two panels are separated by the
+same 32px desktop separator as the panels themselves (20px when stacked).
+Each panel previews its five most recent games;
+when it holds more, a **View all (N)** control below the list expands it to the
+full history (the label flips to **Show latest 5**), without changing what is
+saved. Each card's **Resume** control reopens the game
 with its roster, totals, and change log intact, so undo works immediately
 after resuming and undone changes never reappear after a reload. Games are
 saved only in this browser — clearing site data removes them. Ranks stay
@@ -162,7 +175,7 @@ floored minutes, hours, and days — switching to an absolute "Updated 12 Oct,
 21:08" stamp once a game is more than a week old; finished cards age from
 their frozen finish time, and a replay never rewrites the original's stamp.
 While a game is open, the score-entry panel shows a **Recent entries** list
-below the form: the newest changes first (up to eight), each row with the
+below the form: the newest changes first (up to five), each row with the
 player's token and name, the signed amount ("+5 pts" / "−2 pts"), and its
 relative time, with a "Last: Sam +10" line beside the header showing the
 latest change for undo context. Undo removes the newest entry and the list
@@ -171,26 +184,32 @@ score changes yet." Games saved before this feature keep working — their
 older entries simply show a muted "—" instead of a time, and cards with
 missing stamps fall back to the plain "Updated" label.
 
-Ending a game is deliberate and irreversible. The score-entry panel's
-**Finish game** action opens an inline confirmation — "Finish this game?"
-with the warning "Finished games can't be reopened for scoring. Final
-standings stay saved in this browser." — where **Cancel** returns to scoring
-with everything unchanged. Confirming locks the game: the leaderboard becomes
+Ending a game is deliberate and irreversible. The active header's
+**Finish game** action opens an inline confirmation between the header and the
+leaderboard — "Finish this game?" with the warning "Finished games can't be
+reopened for scoring. Final standings stay saved in this browser." — where
+**Cancel** returns to scoring with everything unchanged. Confirming locks the game: the leaderboard becomes
 read-only final standings under a "Finished" badge with every player's final
 rank and total, and all score controls (Add points, the score-entry panel,
 Save points, Undo last score) disappear; a status line reads "Final standings
 — this game is finished and can't be scored." Finished games move to the
 home screen's **Finished games** panel, whose **View results** controls
 reopen the same read-only standings — unchanged after any reload — while
-unfinished games keep their Resume controls.
+unfinished games keep their Resume controls. Finished standings use the full
+content width instead of reserving an empty score-panel column. Players can
+also be selected by clicking anywhere on their active leaderboard row, not
+just the Add points button; finished rows are inert.
 
 Confirming the finish also celebrates once: a dismissible **Final podium**
-modal opens over the read-only standings, listing "Rank 1" / "Rank 2" /
-"Rank 3" groups for every player whose final competition rank is 1–3 — ties
-are never collapsed (12, 12, 8 puts two players on the top step with no
-"Rank 2" group, and twenty tied players all appear in one scrolling group),
-while players outside the top three stay visible in the full standings
-behind the modal. A brief CSS confetti animation plays and is fully
+modal opens over the read-only standings, showing the top three as ordered
+podium steps — rank 2 on the left, rank 1 center and tallest, rank 3 on the
+right, with missing ranks leaving their column empty. Ties are never collapsed
+(12, 12, 8 puts two players on the top step with no "Rank 2" step, and twenty
+tied players all appear in one scrolling step). Players ranked above 3 appear
+below the steps in a **Rest of the table** list in ranking order, each with
+rank, numbered token, name, and total, so the whole final table stays in the
+celebration; every player also remains visible in the full standings behind the
+modal. A brief CSS confetti animation plays and is fully
 suppressed when the system prefers reduced motion. The podium closes with one
 of three actions: the full-width primary **Play again (same players, reset
 scores)** replays right from the modal exactly like the finished view's
@@ -239,8 +258,8 @@ notice automatically; there are no retry or dismiss buttons.
 Run `$feature-flow` one feature at a time. The eleven MVP features and the
 seven v2 features (`refresh-design-system`, `name-game-titles`,
 `track-game-activity`, `add-quick-score-entry`, `show-player-numbers`,
-`show-score-distribution`, and `extend-podium-actions`) cover the agreed v2
-set: the first six are accepted and merged, and `extend-podium-actions` is
+`show-score-distribution`, and `extend-podium-actions`) are accepted and
+merged. The post-playtest refinement batch (`refine-ui-after-testing`) is
 implemented and awaiting independent validation. Any further scope
 (rounds/timers, dashboard statistics, presets, roster reuse, one-tap games)
 needs a new agreed feature first.

@@ -90,7 +90,11 @@ async function goHome(cdp) {
 }
 
 async function clickCounter(cdp, amount) {
-  await click(cdp, `[data-action='apply-quick-score'][data-amount='${amount}']`);
+  const selector = `[data-action='apply-quick-score'][data-amount='${amount}']`;
+  // Focus first like a real pointer activation, then click: staging never
+  // re-renders, so the pressed counter keeps focus.
+  await evaluate(cdp, (targetSelector) => document.querySelector(targetSelector)?.focus(), selector);
+  await click(cdp, selector);
   await waitForSelector(cdp, "#score-amount");
 }
 
@@ -233,11 +237,10 @@ const BLOCK_SET_ITEM_SOURCE = `
   })();
 `;
 
-// Session A (Scenarios 1 + 2): a counter behaves exactly like a typed save —
-// immediate apply through the ordinary path, exact accepted feedback, cleared
-// input, `Last:` context, envelope version 1, focus back on the pressed
-// counter — every preset works, and undo walks counter changes back like any
-// other change with a byte-identical no-op at the end.
+// Session A (Scenarios 1 + 2): counters stage the points draft — totals,
+// ranks, feedback, recent entries, focus, and storage stay untouched — and
+// Save points applies the combined draft as one ordinary change. Every preset
+// accumulates, and undo reverses the combined change like any other change.
 async function runDesktopCounters(cdp, { consoleProblems }) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   await navigate(cdp, baseUrl);
@@ -272,112 +275,109 @@ async function runDesktopCounters(cdp, { consoleProblems }) {
   assert.deepEqual(
     panel.counters.map((counter) => counter.label),
     [
-      "Add 1 point to Alex",
-      "Add 5 points to Alex",
-      "Add 10 points to Alex",
-      "Add 25 points to Alex",
-      "Add -1 point to Alex",
-      "Add -5 points to Alex",
-      "Add -10 points to Alex"
+      "Add 1 point to the points draft for Alex",
+      "Add 5 points to the points draft for Alex",
+      "Add 10 points to the points draft for Alex",
+      "Add 25 points to the points draft for Alex",
+      "Add -1 point to the points draft for Alex",
+      "Add -5 points to the points draft for Alex",
+      "Add -10 points to the points draft for Alex"
     ],
-    "counter accessible names use the signed amount with correct pluralization"
+    "counter accessible names use the signed amount, correct pluralization, and say draft"
   );
   assert.equal(panel.undoFollowsSave, true, "Save points and Undo last score stay adjacent siblings");
 
-  // Scenario 1: +25 from an empty field on the selected player.
+  const baseline = await readSavedGamesState(cdp, STORAGE_KEY);
   const before = await readQuickState(cdp);
   assert.equal(before.inputValue, "", "the amount field starts empty");
+  assert.deepEqual(before.totals.map((row) => row.total), ["0", "0"]);
+
+  // Scenario 1: +25 stages only the draft; nothing else changes and focus
+  // stays on the pressed counter.
   await clickCounter(cdp, 25);
-  const afterFirst = await readQuickState(cdp);
-  assert.equal(afterFirst.totals[0].total, "25", "the counter applies immediately");
-  assert.equal(afterFirst.feedback, "Added 25 points to Alex. New total: 25. Rank: 1.", "the exact accepted success message");
-  assert.equal(afterFirst.feedbackLive, "polite", "no new live region: the existing polite region announces");
-  assert.equal(afterFirst.inputValue, "", "the amount field clears after the counter applies");
-  assert.equal(afterFirst.lastLine, "Last: Alex +25", "recent entries derive for free");
-  assert.deepEqual(afterFirst.recentRows, [["Alex", "+25 pts"]]);
-  assert.equal(afterFirst.focusedAmount, "25", "focus returns to the pressed counter");
-  const storedAfterFirst = await readSavedGamesState(cdp, STORAGE_KEY);
-  assert.equal(storedAfterFirst.payloadVersion, 1, "the envelope stays version 1");
-  assert.equal(storedAfterFirst.gameCount, 1, "counter saves never grow the game list");
-  const parsedFirst = JSON.parse(storedAfterFirst.raw);
-  assert.equal(parsedFirst.games[0].changes.length, 1);
+  const staged = await readQuickState(cdp);
+  assert.equal(staged.inputValue, "25", "the counter stages its preset in the draft");
+  assert.deepEqual(staged.totals.map((row) => row.total), ["0", "0"], "staging never changes totals");
+  assert.equal(staged.feedback, "", "staging never paints feedback");
+  assert.equal(staged.lastLine, null, "staging adds no recent entry");
+  assert.deepEqual(staged.recentRows, []);
+  assert.equal(staged.focusedAmount, "25", "focus stays on the pressed counter");
+  let rawNow = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
+  assert.equal(rawNow, baseline.raw, "a counter tap must not write storage");
+
+  // Counters accumulate on the pending draft without saving.
+  await clickCounter(cdp, 10);
+  assert.equal((await readQuickState(cdp)).inputValue, "35");
+  await clickCounter(cdp, -1);
+  assert.equal((await readQuickState(cdp)).inputValue, "34");
+  rawNow = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
+  assert.equal(rawNow, baseline.raw, "repeated taps stay byte-identical to the pre-tap payload");
+
+  // Save points applies the combined draft as one ordinary change.
+  await click(cdp, "[data-score-form] button[type='submit']");
+  await waitForSelector(cdp, "#score-amount");
+  const savedState = await readQuickState(cdp);
+  assert.equal(savedState.totals[0].total, "34", "Save applies the staged total, not each tap");
+  assert.equal(savedState.feedback, "Added 34 points to Alex. New total: 34. Rank: 1.", "the exact accepted success message");
+  assert.equal(savedState.feedbackLive, "polite", "no new live region: the existing polite region announces");
+  assert.equal(savedState.inputValue, "", "the amount field clears after the save");
+  assert.equal(savedState.lastLine, "Last: Alex +34", "recent entries derive for free");
+  assert.deepEqual(savedState.recentRows, [["Alex", "+34 pts"]]);
+  assert.equal(savedState.focusedId, "score-amount", "Save keeps the accepted typed-save focus contract");
+  const storedAfterSave = await readSavedGamesState(cdp, STORAGE_KEY);
+  assert.equal(storedAfterSave.payloadVersion, 1, "the envelope stays version 1");
+  assert.equal(storedAfterSave.gameCount, 1, "counter-driven saves never grow the game list");
+  const parsedFirst = JSON.parse(storedAfterSave.raw);
+  assert.equal(parsedFirst.games[0].changes.length, 1, "one Save writes exactly one change");
   assert.deepEqual(
     Object.keys(parsedFirst.games[0].changes[0]).sort(),
     ["amount", "at", "id", "playerId"],
-    "a counter change is stored with the exact typed-save shape"
+    "the combined change is stored with the exact typed-save shape"
   );
-  assert.equal(parsedFirst.games[0].changes[0].amount, 25);
-  const desktopScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-counter-tap.png"));
+  assert.equal(parsedFirst.games[0].changes[0].amount, 34);
+  const desktopScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-counter-draft.png"));
 
-  // Scenario 2: every preset on a fresh game, negatives included.
-  await goHome(cdp);
-  await createGame(cdp, "Preset walk night", ["Alex", "Sam"]);
-  const savedAfterSecondGame = await readSavedGamesState(cdp, STORAGE_KEY);
-  assert.equal(savedAfterSecondGame.gameCount, 2, "only game creation grows the saved list");
-
-  const presetWalk = [
-    [1, "Added 1 points to Alex. New total: 1. Rank: 1.", "1"],
-    [5, "Added 5 points to Alex. New total: 6. Rank: 1.", "6"],
-    [10, "Added 10 points to Alex. New total: 16. Rank: 1.", "16"],
-    [25, "Added 25 points to Alex. New total: 41. Rank: 1.", "41"]
-  ];
-  for (const [amount, message, total] of presetWalk) {
-    await clickCounter(cdp, amount);
-    const state = await readQuickState(cdp);
-    assert.equal(state.totals[0].total, total, `+${amount} lands like a typed save`);
-    assert.equal(state.feedback, message, `+${amount} announces the exact accepted message`);
-    assert.equal(state.inputValue, "", `the draft clears after +${amount}`);
-    assert.equal(state.focusedAmount, String(amount), `focus returns to the +${amount} counter`);
-  }
-
+  // Every preset accumulates into the same draft (empty -> 41), with no save
+  // until Save points.
   await selectPlayer(cdp, "active-game-player-2");
-  const negativeWalk = [
-    [-1, "Added -1 points to Sam. New total: -1. Rank: 2.", "-1"],
-    [-5, "Added -5 points to Sam. New total: -6. Rank: 2.", "-6"],
-    [-10, "Added -10 points to Sam. New total: -16. Rank: 2.", "-16"]
+  const rawBeforeWalk = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
+  const presetWalk = [
+    [1, "1"],
+    [5, "6"],
+    [10, "16"],
+    [25, "41"],
+    [-1, "40"],
+    [-5, "35"],
+    [-10, "25"]
   ];
-  for (const [amount, message, total] of negativeWalk) {
+  for (const [amount, expected] of presetWalk) {
     await clickCounter(cdp, amount);
     const state = await readQuickState(cdp);
-    assert.equal(state.totals[1].total, total, `${amount} lands like a typed save`);
-    assert.equal(state.feedback, message, `${amount} announces the exact accepted message`);
-    assert.equal(state.focusedAmount, String(amount), `focus returns to the ${amount} counter`);
+    assert.equal(state.inputValue, expected, `${amount} accumulates into the draft`);
+    assert.deepEqual(state.totals.map((row) => row.total), ["34", "0"], `${amount} never changes totals`);
+    assert.equal(state.feedback, "", `${amount} never paints feedback`);
+    assert.equal(state.focusedAmount, String(amount), `focus stays on the ${amount} counter`);
   }
-  const walkedState = await readQuickState(cdp);
-  assert.equal(walkedState.lastLine, "Last: Sam -10", "`Last:` recomputes from the newest counter change");
-  const walkedStored = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
-  const walkedGame = walkedStored.games.find((game) => game.title === "Preset walk night");
-  assert.equal(walkedGame.changes.length, 7, "the counter taps logged exactly seven changes");
-  const storedAfterFirstGame = walkedStored.games.find((game) => game.title === "Counter night");
-  assert.equal(storedAfterFirstGame.changes.length, 1, "the earlier game's log is untouched");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, rawBeforeWalk,
+    "the full preset walk stays a byte-identical no-save");
 
-  // Undo is ordinary: exactly the latest counter change reverses, entries
-  // disappear, repeated undos drain the log, and the final no-op is a
-  // byte-identical no-write.
-  const undoWalk = [
-    "Undid -10 points for Sam. New total: -6. Rank: 2.",
-    "Undid -5 points for Sam. New total: -1. Rank: 2.",
-    "Undid -1 points for Sam. New total: 0. Rank: 2.",
-    "Undid 25 points for Alex. New total: 16. Rank: 1.",
-    "Undid 10 points for Alex. New total: 6. Rank: 1.",
-    "Undid 5 points for Alex. New total: 1. Rank: 1.",
-    "Undid 1 points for Alex. New total: 0. Rank: 1."
-  ];
-  for (const message of undoWalk) {
-    await click(cdp, "[data-action='undo-last-score']");
-    await waitForSelector(cdp, "#score-amount");
-    const state = await readQuickState(cdp);
-    assert.equal(state.feedback, message, "undo walks counter changes back like any other change");
-  }
-  const drainedStored = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
-  assert.equal(drainedStored.games.find((game) => game.title === "Preset walk night").changes.length, 0, "the log drains to empty");
-  const rawBeforeNoop = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
+  await click(cdp, "[data-score-form] button[type='submit']");
+  await waitForSelector(cdp, "#score-amount");
+  const samSaved = await readQuickState(cdp);
+  assert.equal(samSaved.totals[1].total, "25", "the accumulated draft saves once");
+  assert.equal(samSaved.feedback, "Added 25 points to Sam. New total: 25. Rank: 2.");
+  const walkedStored = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
+  assert.deepEqual(walkedStored.games[0].changes.map((change) => change.amount), [34, 25],
+    "the game logs one change per Save");
+
+  // Undo is ordinary: exactly the combined change reverses.
   await click(cdp, "[data-action='undo-last-score']");
   await waitForSelector(cdp, "#score-amount");
-  const noopState = await readQuickState(cdp);
-  assert.equal(noopState.feedback, "Nothing to undo yet.", "the accepted no-op copy is unchanged");
-  const rawAfterNoop = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
-  assert.equal(rawAfterNoop, rawBeforeNoop, "the no-op undo stays a byte-identical no-write");
+  const afterUndo = await readQuickState(cdp);
+  assert.equal(afterUndo.feedback, "Undid 25 points for Sam. New total: 0. Rank: 2.");
+  assert.deepEqual(afterUndo.totals.map((row) => row.total), ["34", "0"]);
+  const undoneStored = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
+  assert.deepEqual(undoneStored.games[0].changes.map((change) => change.amount), [34]);
   assert.deepEqual(consoleProblems, [], "the desktop counters session must not produce uncaught console errors");
   return { desktopScreenshot };
 }
@@ -470,46 +470,63 @@ async function runStepperStages(cdp, { consoleProblems }) {
   assert.deepEqual(consoleProblems, [], "the stepper session must not produce uncaught console errors");
 }
 
-// Session C (Scenario 4): a counter discards a typed draft — never sums — and
-// a subsequent typed save applies ordinarily.
+// Session C (Scenario 3): a typed draft and counter taps combine into one
+// staged value; Save points applies exactly that value as one change. Empty
+// drafts start from the preset and additions clamp at ±1,000,000.
 async function runDraftInteraction(cdp, { consoleProblems }) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   await navigate(cdp, baseUrl);
   await waitForSelector(cdp, "[data-action='new-game']");
 
   await createGame(cdp, "Draft night", ["Alex", "Sam"]);
+  const baseline = await readSavedGamesState(cdp, STORAGE_KEY);
 
+  // 12 typed + +5 + +10 + −1 = 26 in the draft; nothing saves until Save points.
   await fill(cdp, "#score-amount", "12");
   await clickCounter(cdp, 5);
+  assert.equal((await readQuickState(cdp)).inputValue, "17", "a counter adds to the typed draft");
+  await clickCounter(cdp, 10);
+  assert.equal((await readQuickState(cdp)).inputValue, "27");
+  await clickCounter(cdp, -1);
   let state = await readQuickState(cdp);
-  assert.equal(state.totals[0].total, "5", "the counter applies exactly its preset (not 17)");
-  assert.equal(state.feedback, "Added 5 points to Alex. New total: 5. Rank: 1.");
-  assert.equal(state.inputValue, "", "the typed draft is discarded, not applied");
+  assert.equal(state.inputValue, "26", "positive and negative counters combine with the typed draft");
+  assert.deepEqual(state.totals.map((row) => row.total), ["0", "0"], "the combined draft never touches totals");
+  assert.equal(state.feedback, "", "the combined draft never paints feedback");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, baseline.raw,
+    "staging the combined draft never writes storage");
 
-  await fill(cdp, "#score-amount", "12");
+  await click(cdp, "[data-score-form] button[type='submit']");
+  await waitForSelector(cdp, "#score-amount");
+  state = await readQuickState(cdp);
+  assert.equal(state.totals[0].total, "26", "Save applies the combined draft");
+  assert.equal(state.feedback, "Added 26 points to Alex. New total: 26. Rank: 1.");
+  const storedOnce = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
+  assert.deepEqual(storedOnce.games[0].changes.map((change) => change.amount), [26],
+    "the combined draft writes exactly one change-log entry");
+
+  // Empty + −10 starts at the preset, then saves ordinarily.
+  await fill(cdp, "#score-amount", "");
   await clickCounter(cdp, -10);
   state = await readQuickState(cdp);
-  assert.equal(state.totals[1].total, "-5", "a negative counter also discards the draft (5 - 10 = -5, re-ranked below Sam's 0)");
-  assert.equal(state.feedback, "Added -10 points to Alex. New total: -5. Rank: 2.");
+  assert.equal(state.inputValue, "-10", "an empty draft stages the preset itself");
+  assert.deepEqual(state.totals.map((row) => row.total), ["26", "0"], "staging still changes no totals");
+  await click(cdp, "[data-score-form] button[type='submit']");
+  await waitForSelector(cdp, "#score-amount");
+  state = await readQuickState(cdp);
+  assert.equal(state.totals[0].total, "16", "the negative draft saves ordinarily");
+  assert.equal(state.feedback, "Added -10 points to Alex. New total: 16. Rank: 1.");
 
-  // A lone-sign draft is the sanitized empty draft: the counter still applies
-  // exactly its preset.
-  await fill(cdp, "#score-amount", "+");
+  // Additions clamp at the upper bound and stay staged.
+  await fill(cdp, "#score-amount", "999999");
   await clickCounter(cdp, 25);
   state = await readQuickState(cdp);
-  assert.equal(state.totals[0].total, "20", "-5 + 25 = 20 with the sanitized draft discarded");
-  assert.equal(state.feedback, "Added 25 points to Alex. New total: 20. Rank: 1.");
+  assert.equal(state.inputValue, "1000000", "counter additions clamp at +1,000,000");
+  assert.deepEqual(state.totals.map((row) => row.total), ["16", "0"], "the clamp stays a draft-only edit");
+  assert.equal((await readQuickState(cdp)).focusedAmount, "25", "focus stays on the clamped counter");
 
-  await savePoints(cdp, "12");
-  state = await readQuickState(cdp);
-  assert.equal(state.totals[0].total, "32", "a subsequent typed save applies ordinarily");
-  assert.equal(state.feedback, "Added 12 points to Alex. New total: 32. Rank: 1.");
-  const stored = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
-  assert.deepEqual(
-    stored.games[0].changes.map((change) => change.amount),
-    [5, -10, 25, 12],
-    "the log carries each change in order"
-  );
+  const storedFinal = JSON.parse((await readSavedGamesState(cdp, STORAGE_KEY)).raw);
+  assert.deepEqual(storedFinal.games[0].changes.map((change) => change.amount), [26, -10],
+    "only the two Save presses wrote changes");
   assert.deepEqual(consoleProblems, [], "the draft-interaction session must not produce uncaught console errors");
 }
 
@@ -524,13 +541,13 @@ async function runResponsiveA11y(cdp, { consoleProblems }) {
   await createGame(cdp, "Tap night", ["Alex", "Sam"]);
 
   const namesFor = (name) => [
-    "Add 1 point to " + name,
-    "Add 5 points to " + name,
-    "Add 10 points to " + name,
-    "Add 25 points to " + name,
-    "Add -1 point to " + name,
-    "Add -5 points to " + name,
-    "Add -10 points to " + name
+    "Add 1 point to the points draft for " + name,
+    "Add 5 points to the points draft for " + name,
+    "Add 10 points to the points draft for " + name,
+    "Add 25 points to the points draft for " + name,
+    "Add -1 point to the points draft for " + name,
+    "Add -5 points to the points draft for " + name,
+    "Add -10 points to the points draft for " + name
   ];
 
   const assertPanelBaseline = async (label) => {
@@ -565,6 +582,7 @@ async function runResponsiveA11y(cdp, { consoleProblems }) {
   assert.equal((await readFocusedStop(cdp)).id, "active-title", "the walk starts from the focused heading");
   const stopsBeforePlusFive = [
     { action: "open-title-edit" },
+    { action: "open-finish" },
     { action: "select-player" },
     { action: "select-player" },
     { action: "step-score-down" },
@@ -587,27 +605,26 @@ async function runResponsiveA11y(cdp, { consoleProblems }) {
     }
   }
 
-  // Repeat-press contract: a real Enter on the tab-reached +5 applies, focus
-  // returns to +5, and a second Enter applies again. Keyboard focus shows the
-  // visible outline.
+  // Repeat-press contract: a real Enter on the tab-reached +5 stages +5,
+  // focus stays on +5 (nothing re-renders), and a second Enter accumulates.
+  // Keyboard focus shows the visible outline.
   const stopOnPlusFive = await readFocusedStop(cdp);
   assert.equal(stopOnPlusFive.amount, "5", "the walk sits on the +5 counter for the Enter proof");
   assert.notEqual(stopOnPlusFive.outlineStyle, "none", "keyboard focus must show a visible outline");
   await pressEnter(cdp);
-  await waitForSelector(cdp, "#score-amount");
   let stop = await readFocusedStop(cdp);
-  assert.equal(stop.amount, "5", "focus returns to +5 after the apply");
+  assert.equal(stop.amount, "5", "focus stays on +5 after staging");
   let quick = await readQuickState(cdp);
-  assert.equal(quick.totals[0].total, "5", "the first Enter applies +5");
-  assert.equal(quick.feedback, "Added 5 points to Alex. New total: 5. Rank: 1.");
+  assert.equal(quick.inputValue, "5", "the first Enter stages +5 in the draft");
+  assert.deepEqual(quick.totals.map((row) => row.total), ["0", "0"], "the staged Enter changes no totals");
+  assert.equal(quick.feedback, "", "the staged Enter paints no feedback");
   await pressEnter(cdp);
-  await waitForSelector(cdp, "#score-amount");
   stop = await readFocusedStop(cdp);
   assert.equal(stop.amount, "5", "focus stays on +5 for repeated presses");
-  assert.notEqual(stop.outlineStyle, "none", "the re-focused counter keeps a visible outline");
+  assert.notEqual(stop.outlineStyle, "none", "the still-focused counter keeps a visible outline");
   quick = await readQuickState(cdp);
-  assert.equal(quick.totals[0].total, "10", "the second Enter applies +5 again");
-  assert.equal(quick.feedback, "Added 5 points to Alex. New total: 10. Rank: 1.");
+  assert.equal(quick.inputValue, "10", "the second Enter accumulates another +5 in the draft");
+  assert.deepEqual(quick.totals.map((row) => row.total), ["0", "0"], "repeated Enter still saves nothing");
 
   // The walk resumes from the rebuilt +5 button: the rest of the Decision 6
   // order is asserted with the same real keys.
@@ -642,9 +659,10 @@ async function runResponsiveA11y(cdp, { consoleProblems }) {
   return { mobileScreenshot, desktopScreenshot };
 }
 
-// Session E (Scenario 6): under blocked writes a counter still applies in
-// memory with the unchanged notice and code-only warnings and no storage key;
-// finished and active-empty views expose zero counters or stepper.
+// Session E (Scenario 6): under blocked writes counters still stage in memory
+// and Save points applies the draft with the unchanged notice and code-only
+// warnings and no storage key; finished and active-empty views expose zero
+// counters or stepper.
 async function runBlockedWriteAndBoundaries(cdp, { consoleProblems, warnings }) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   await navigate(cdp, baseUrl);
@@ -654,8 +672,14 @@ async function runBlockedWriteAndBoundaries(cdp, { consoleProblems, warnings }) 
   assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).keyCount, 0, "blocked writes must never create the storage key");
 
   await clickCounter(cdp, 25);
-  const state = await readQuickState(cdp);
-  assert.equal(state.totals[0].total, "25", "the counter still applies in memory");
+  let state = await readQuickState(cdp);
+  assert.equal(state.inputValue, "25", "the counter still stages in memory");
+  assert.deepEqual(state.totals.map((row) => row.total), ["0", "0"], "staging under blocked writes changes no totals");
+
+  await click(cdp, "[data-score-form] button[type='submit']");
+  await waitForSelector(cdp, "#score-amount");
+  state = await readQuickState(cdp);
+  assert.equal(state.totals[0].total, "25", "Save applies the draft in memory");
   assert.equal(state.feedback, "Added 25 points to Alex. New total: 25. Rank: 1.", "the success feedback is unchanged");
   const notice = await evaluate(cdp, () => {
     const region = document.querySelector("[data-storage-notice]");
@@ -718,7 +742,7 @@ async function main() {
       setupSource: BLOCK_SET_ITEM_SOURCE
     });
 
-    console.log("Browser quick-score test passed: the seven quick tap counters (+1/+5/+10/+25/-1/-5/-10) apply immediately through the unchanged score-save path with the exact accepted messages, cleared drafts, `Last:` context, envelope version 1, and focus returned to the pressed counter; undo treats counter changes like any other change with a byte-identical no-op at the end; the -/+ stepper stages the draft from a 0 baseline, clamps to +/-1000000 as plain integer text, never saves (byte-identical payload, no re-render, no feedback), and a stepped draft saves ordinarily while a 0 draft keeps the exact zero message; counters discard typed drafts without summing; at 320x720 and 1280x800 all nine new controls are >=44px with visible focus, the Decision 6 accessible names, the 'Quick tap counters' group label, the Decision 6 tab order, and a real-key Enter repeat-press walk; blocked writes keep counters working in memory with the unchanged notice, code-only warnings, and no storage key; finished and active-empty views expose zero counters or stepper; zero uncaught console errors.");
+    console.log("Browser quick-score test passed: the seven quick tap counters (+1/+5/+10/+25/-1/-5/-10) and the -/+ stepper share one draft helper that adds to the pending points draft from a 0 baseline, clamps to +/-1000000 as plain integer text, and never renders, paints feedback, or saves (byte-identical payloads, unchanged totals/ranks/recent entries, focus retained on the pressed control); Save points applies the combined draft as exactly one ordinary change with the exact accepted message and focus contract; the draft-specific accessible names ('Add {n} point(s) to the points draft for {name}') and 'Quick tap counters' group label hold; at 320x720 and 1280x800 all nine new controls are >=44px with visible focus, the Decision 6 tab order, and a real-key Enter repeat-press walk that accumulates the draft; blocked writes keep staging and saving in memory with the unchanged notice, code-only warnings, and no storage key; finished and active-empty views expose zero counters or stepper; zero uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[counters.desktopScreenshot, responsive.mobileScreenshot, responsive.desktopScreenshot].join(", ")}`);
   } finally {
     await closeServer(server);

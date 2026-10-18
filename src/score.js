@@ -1,9 +1,10 @@
 export const MAX_SCORE_ABS = 1_000_000;
 
-// The Recent entries panel cap (track-game-activity): the sidebar shows at
-// most this many newest changes, so long logs stay scannable without
-// pagination. Pure display concern — storage keeps the full log.
-export const RECENT_ENTRIES_LIMIT = 8;
+// The Recent entries panel cap (track-game-activity; reduced from 8 to 5 by
+// refine-ui-after-testing): the sidebar shows at most this many newest
+// changes, so long logs stay scannable without pagination. Pure display
+// concern — storage keeps the full log.
+export const RECENT_ENTRIES_LIMIT = 5;
 
 export const SCORE_ERROR_CODES = [
   "empty",

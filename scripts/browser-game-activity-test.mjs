@@ -322,10 +322,15 @@ async function readPlacement(cdp) {
       return { present: false };
     }
 
+    // Superseded by refine-ui-after-testing: Finish game moved from the score
+    // panel into the active header. Recent entries remain the score panel's
+    // last block (the old before-finish check no longer describes the view).
     return {
       present: true,
       afterScoreForm: Boolean(form && (form.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING)),
-      beforeFinishSection: Boolean(panel.compareDocumentPosition(finish) & Node.DOCUMENT_POSITION_FOLLOWING)
+      recentEntriesLastInScorePanel: panel.parentElement?.lastElementChild === panel,
+      finishSectionInHeader: Boolean(document.querySelector(".active-header [data-finish-section]")),
+      finishSectionInScorePanel: Boolean(document.querySelector(".score-panel [data-finish-section]"))
     };
   });
 }
@@ -403,8 +408,10 @@ async function runEntriesOrderAndLast(cdp, { consoleProblems }) {
 
   const placement = await readPlacement(cdp);
   assert.equal(placement.present, true);
-  assert.equal(placement.afterScoreForm, true, "the panel sits between the score form and the finish section");
-  assert.equal(placement.beforeFinishSection, true);
+  assert.equal(placement.afterScoreForm, true, "the panel sits after the score form");
+  assert.equal(placement.recentEntriesLastInScorePanel, true, "recent entries remain the score panel's last block");
+  assert.equal(placement.finishSectionInHeader, true, "Finish game moved to the active header");
+  assert.equal(placement.finishSectionInScorePanel, false);
 
   const active = await readActiveState(cdp);
   assert.deepEqual(active.totals.map((row) => row.total), ["10", "5"], "the leaderboard behaves exactly as accepted");
@@ -456,8 +463,9 @@ async function runEntriesOrderAndLast(cdp, { consoleProblems }) {
 
 // Session 2 (Scenarios 2 + 5 + the cap): seeded stamps render exact relative
 // tokens, legacy no-`at` rows degrade to `—`, corrupt/missing card stamps fall
-// back through createdAt to bare "Updated", the log caps at 8 newest rows, and
-// nothing writes.
+// back through createdAt to bare "Updated", the log caps at the five newest
+// rows, and nothing writes. The six active seeds also exercise the Dashboard's
+// five-card preview + "View all (6)" disclosure.
 async function runSeededAges(cdp, { consoleProblems }) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   const seedNow = Date.now();
@@ -473,7 +481,52 @@ async function runSeededAges(cdp, { consoleProblems }) {
   const seededRaw = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
   assert.equal(JSON.parse(seededRaw).version, 1);
 
-  const home = await readHomeCards(cdp);
+  // Six active seeds exceed the five-card preview, so the panel collapses to
+  // the five most recent and shows the per-panel toggle.
+  const previewHome = await readHomeCards(cdp);
+  assert.equal(previewHome.unfinishedCards.length, 5, "six seeds show a five-card preview");
+  const toggle = await evaluate(cdp, () => {
+    const button = document.querySelector("[data-action='toggle-unfinished-games']");
+    return {
+      present: Boolean(button),
+      text: button?.textContent?.trim() ?? null,
+      expanded: button?.getAttribute("aria-expanded") ?? null,
+      controls: button?.getAttribute("aria-controls") ?? null,
+      label: button?.getAttribute("aria-label") ?? null,
+      listPresent: Boolean(document.querySelector("#unfinished-game-list")),
+      height: button?.getBoundingClientRect().height ?? 0
+    };
+  });
+  assert.equal(toggle.present, true, "more than five unfinished games exposes the toggle");
+  assert.equal(toggle.text, "View all (6)");
+  assert.equal(toggle.expanded, "false");
+  assert.equal(toggle.controls, "unfinished-game-list");
+  assert.equal(toggle.label, "View all (6) unfinished games");
+  assert.equal(toggle.listPresent, true, "aria-controls targets the rendered list id");
+  assert.ok(toggle.height >= 44, "the disclosure toggle needs a >=44px target");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw,
+    "rendering the collapsed preview never writes");
+
+  await click(cdp, "[data-action='toggle-unfinished-games']");
+  const expandedHome = await readHomeCards(cdp);
+  assert.equal(expandedHome.unfinishedCards.length, 6, "View all expands to every unfinished game");
+  const expandedToggle = await evaluate(cdp, () => {
+    const button = document.querySelector("[data-action='toggle-unfinished-games']");
+    return {
+      text: button?.textContent?.trim() ?? null,
+      expanded: button?.getAttribute("aria-expanded") ?? null,
+      label: button?.getAttribute("aria-label") ?? null,
+      focused: document.activeElement === button
+    };
+  });
+  assert.equal(expandedToggle.text, "Show latest 5");
+  assert.equal(expandedToggle.expanded, "true");
+  assert.equal(expandedToggle.label, "Show latest 5 unfinished games");
+  assert.equal(expandedToggle.focused, true, "the freshly rendered toggle keeps focus");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw,
+    "expanding the preview never writes");
+
+  const home = expandedHome;
   const cardById = new Map([...home.unfinishedCards, ...home.finishedCards].map((card) => [card.gameId, card]));
   assert.equal(cardById.get("seed-mixed")?.updated, "Updated 10m ago", "the card ages from the storage-owned updatedAt");
   assert.equal(cardById.get("seed-legacy")?.updated, "Updated 1h ago");
@@ -503,18 +556,19 @@ async function runSeededAges(cdp, { consoleProblems }) {
   let rawNow = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
   assert.equal(rawNow, seededRaw, "resuming must not write storage");
 
-  // The capped log: exactly 8 newest rows, ghost entries skipped for free.
+  // The capped log: exactly 5 newest rows, ghost entries skipped for free.
+  // Superseded by refine-ui-after-testing: RECENT_ENTRIES_LIMIT moved 8 -> 5.
   await goHome(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-capped']");
   await waitForSelector(cdp, "[data-recent-entries]");
   const cappedPanel = await readRecentEntries(cdp);
-  assert.equal(cappedPanel.rows.length, 8, "the panel caps at RECENT_ENTRIES_LIMIT");
+  assert.equal(cappedPanel.rows.length, 5, "the panel caps at RECENT_ENTRIES_LIMIT");
   assert.equal(cappedPanel.rows[0].name, "Bo", "the newest of 12 logged changes renders first");
   assert.equal(cappedPanel.rows[0].amount, "+12 pts");
   assert.deepEqual(
     cappedPanel.rows.map((row) => row.name),
-    ["Bo", "Ada", "Bo", "Ada", "Bo", "Ada", "Bo", "Ada"],
-    "newest-first ordering across the capped window"
+    ["Bo", "Ada", "Bo", "Ada", "Bo"],
+    "newest-first ordering across the five-row capped window"
   );
 
   // The legacy game: pre-feature rows keep working with muted `—` time cells.
@@ -833,7 +887,7 @@ async function main() {
     const responsive = await runSession("responsive-console", runResponsiveConsole);
     assert.equal(typeof responsive.mobileActiveScreenshot, "string");
 
-    console.log("Browser game-activity test passed: score changes stamp per-entry `at` times and render newest first in the Recent entries panel (cap 8, `Last: {name} {signedAmount}` header, signed '+5 pts'/'-2 pts' amounts, 'Just now'/'10m ago'/'3h ago'/'2d ago' and the absolute '{d MMM, HH:mm}' token from seeded stamps with floor-math margins); cards render 'Updated {token}' from updatedAt → createdAt → bare 'Updated'; per-entry times survive reload/resume byte-identically; undo removes the newest entry, recomputes `Last:`, refreshes updatedAt, and a no-op undo is a byte-identical no-write; blocked writes keep undo working in memory with the unchanged notice and code-only warnings; finished views show no panel and freeze their stamp while Play again starts clean with the original byte-identical; legacy no-`at` rows degrade to muted '—'; 320x720 and 1280x800 stay overflow-free with zero focusable panel elements, the frozen --muted token, AA contrast, and zero uncaught console errors.");
+    console.log("Browser game-activity test passed: the six active seeds exercise the Dashboard five-card preview and View all (6) toggle before all card ages are read; score changes stamp per-entry `at` times and render newest first in the Recent entries panel (cap 5, `Last: {name} {signedAmount}` header, signed '+5 pts'/'-2 pts' amounts, 'Just now'/'10m ago'/'3h ago'/'2d ago' and the absolute '{d MMM, HH:mm}' token from seeded stamps with floor-math margins); cards render 'Updated {token}' from updatedAt → createdAt → bare 'Updated'; per-entry times survive reload/resume byte-identically; undo removes the newest entry, recomputes `Last:`, refreshes updatedAt, and a no-op undo is a byte-identical no-write; blocked writes keep undo working in memory with the unchanged notice and code-only warnings; finished views show no panel and freeze their stamp while Play again starts clean with the original byte-identical; legacy no-`at` rows degrade to muted '—'; 320x720 and 1280x800 stay overflow-free with zero focusable panel elements, the frozen --muted token, AA contrast, and zero uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       entries.desktopScreenshot,
       undo.undoScreenshot,
