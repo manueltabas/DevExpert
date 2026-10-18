@@ -34,8 +34,9 @@ Behavioral additions, chosen because they are cheap and fit the existing data:
 - **Updated timestamps**: store and display last-activity time per game ("Updated 10m ago").
 - **Score distribution**: a stacked bar of each player's share of total points under the leaderboard.
 - **Empty states**: purposeful empty states for ongoing and finished panels, and for the Active Game destination when nothing is in progress.
-- **Podium actions**: Play again, Close & view full standings, and Save & exit to Dashboard.
-- **Podium steps and rest list**: ordered rank-2/rank-1/rank-3 steps with a taller center, ties preserved, missing ranks omitted, and a ranking-order "Rest of the table" list for every player ranked above 3.
+- **Podium actions**: Play again, Close & view full standings, and Save & exit to Dashboard, plus a `Game concluded` pill and a corner X that dismisses through the same funnel without becoming a fourth action.
+- **Podium steps and ranked summary**: tactile ordered rank-2/rank-1/rank-3 steps with contestants above Winner/Silver/Bronze pedestals, a taller center with a rank-1 crown, ties preserved, missing ranks omitted, the exact tie note, and ranked summary cards for every player (including ranks above 3) in competition-rank groups.
+- **Dashboard history dialog**: each panel previews five games; above five, a View all (N) opener opens a scrollable modal listing every game of that status in the accepted order, returning focus to the opener and never writing storage.
 
 ## Technical direction
 

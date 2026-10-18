@@ -123,13 +123,15 @@ async function savePoints(cdp, amount) {
 }
 
 // The seeded math session stores eight active games; the Dashboard preview
-// (refine-ui-after-testing) shows only the five most recent until expanded.
-async function expandUnfinishedPreview(cdp) {
-  const togglePresent = await evaluate(cdp, () =>
-    Boolean(document.querySelector("[data-action='toggle-unfinished-games']")));
+// (refine-podium-and-history-modal superseded the inline expansion) shows only
+// the five most recent, so older seeds are reached through the history dialog.
+async function openUnfinishedHistory(cdp) {
+  const openerPresent = await evaluate(cdp, () =>
+    Boolean(document.querySelector("[data-action='view-all-unfinished']")));
 
-  if (togglePresent) {
-    await click(cdp, "[data-action='toggle-unfinished-games']");
+  if (openerPresent) {
+    await click(cdp, "[data-action='view-all-unfinished']");
+    await waitForSelector(cdp, "[data-history-dialog]");
   }
 }
 
@@ -357,7 +359,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
 
   // The pinned naive-rounding counterexample: 2/2/2/1/1/1 of 9 -> 23/22/22/11/11/11.
   await goHome(cdp);
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-halves']");
   await waitForSelector(cdp, "[data-score-distribution]");
   const halves = await readDistribution(cdp);
@@ -368,7 +370,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
 
   // Full tie 1/1/1 of 3 tops up in display order: 34/33/33.
   await goHome(cdp);
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-thirds']");
   await waitForSelector(cdp, "[data-score-distribution]");
   const thirds = await readDistribution(cdp);
@@ -379,7 +381,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
   // Mixed signs with a positive total: only positive players share the bar,
   // the negative player appears nowhere, and the caption stays signed.
   await goHome(cdp);
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-mixed-sign']");
   await waitForSelector(cdp, "[data-score-distribution]");
   const mixed = await readDistribution(cdp);
@@ -398,7 +400,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
 
   // A zero-total player among scorers: exactly two entries, the bench omitted.
   await goHome(cdp);
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-zero-player']");
   await waitForSelector(cdp, "[data-score-distribution]");
   const zeroPlayer = await readDistribution(cdp);
@@ -417,7 +419,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
   ];
   for (const expectation of degenerateExpectations) {
     await goHome(cdp);
-    await expandUnfinishedPreview(cdp);
+    await openUnfinishedHistory(cdp);
     await click(cdp, `[data-action='resume-game'][data-game-id='${expectation.id}']`);
     await waitForSelector(cdp, "[data-score-distribution]");
     const degenerate = await readDistribution(cdp);
@@ -433,7 +435,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
   // Derived-only across renders: navigation home, re-resume, and a selection
   // change must leave the stored payload byte-identical.
   await goHome(cdp);
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-mockup']");
   await waitForSelector(cdp, "[data-score-distribution]");
   await selectPlayer(cdp, "seed-mockup-player-2");
@@ -445,7 +447,7 @@ async function runSeededMathAndDegenerates(cdp, { consoleProblems }) {
   await waitForSelector(cdp, "[data-action='new-game']");
   const rawAfterReload = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
   assert.equal(rawAfterReload, seededRaw, "loading never rewrites the payload");
-  await expandUnfinishedPreview(cdp);
+  await openUnfinishedHistory(cdp);
   await click(cdp, "[data-action='resume-game'][data-game-id='seed-mockup']");
   await waitForSelector(cdp, "[data-score-distribution]");
   assert.deepEqual(parseLegendPercents(await readDistribution(cdp)), [34, 28, 23, 15],

@@ -19,7 +19,7 @@ import {
 } from "./browser-test-utils.mjs";
 
 const chromePath = process.env.CHROME_BIN ?? DEFAULT_CHROME_PATH;
-const evidenceDir = await createEvidenceDir("devexpert-refine-ui-after-testing");
+const evidenceDir = await createEvidenceDir("devexpert-refine-podium-and-history-modal");
 const server = createStaticServer();
 const baseUrl = await listen(server);
 
@@ -150,6 +150,60 @@ async function pressEscape(cdp) {
   });
 }
 
+async function readHistoryDialog(cdp) {
+  return evaluate(cdp, () => {
+    const dialog = document.querySelector("[data-history-dialog]");
+    const list = dialog?.querySelector(".saved-game-list");
+    const cards = [...(dialog?.querySelectorAll(".saved-game") ?? [])];
+    const close = dialog?.querySelector("[data-action='close-history']");
+    const cardRects = cards.map((card) => card.getBoundingClientRect());
+
+    return {
+      present: Boolean(dialog),
+      open: Boolean(dialog?.open),
+      labelledBy: dialog?.getAttribute("aria-labelledby") ?? null,
+      describedBy: dialog?.getAttribute("aria-describedby") ?? null,
+      title: dialog?.querySelector("#history-dialog-title")?.textContent?.trim() ?? null,
+      count: dialog?.querySelector("#history-dialog-count")?.textContent?.trim() ?? null,
+      listLabel: list?.getAttribute("aria-label") ?? null,
+      listId: list?.id ?? null,
+      cardTitles: cards.map((card) => card.querySelector(".saved-game-title")?.textContent?.trim() ?? ""),
+      cardIds: cards.map((card) => card.dataset.savedGameId ?? ""),
+      resumeLabels: [...(dialog?.querySelectorAll("[data-action='resume-game']") ?? [])]
+        .map((button) => button.getAttribute("aria-label")),
+      resultLabels: [...(dialog?.querySelectorAll("[data-action='view-results']") ?? [])]
+        .map((button) => button.getAttribute("aria-label")),
+      closeLabel: close?.getAttribute("aria-label") ?? null,
+      closeHeight: close?.getBoundingClientRect().height ?? 0,
+      closeWidth: close?.getBoundingClientRect().width ?? 0,
+      focusOnClose: document.activeElement !== null && document.activeElement === close,
+      focusInsideDialog: Boolean(dialog && document.activeElement && dialog.contains(document.activeElement)),
+      dialogScroll: dialog ? { scrollHeight: dialog.scrollHeight, clientHeight: dialog.clientHeight } : null,
+      cardColumns: cards[0] ? getComputedStyle(cards[0]).gridTemplateColumns.split(" ").length : 0,
+      cardWidths: cardRects.map((rect) => Math.round(rect.width)),
+      bodyWidth: Math.round(dialog?.querySelector(".history-dialog-body")?.getBoundingClientRect().width ?? 0),
+      horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
+    };
+  });
+}
+
+async function clickBackdrop(cdp, x, y) {
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x,
+    y,
+    button: "left",
+    clickCount: 1
+  });
+  await cdp.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    clickCount: 1
+  });
+}
+
 async function waitForAbsent(cdp, selector) {
   const deadline = Date.now() + 5000;
 
@@ -171,11 +225,12 @@ async function readDashboard(cdp) {
   return evaluate(cdp, () => {
     const panelFor = (id) => document.querySelector(`article[aria-labelledby='${id}-title']`);
     const titles = (root) => [...(root?.querySelectorAll(".saved-game-title") ?? [])].map((node) => node.textContent.trim());
-    const toggleFor = (action) => {
+    const openerFor = (action) => {
       const button = document.querySelector(`[data-action='${action}']`);
       return button ? {
         text: button.textContent.trim(),
         label: button.getAttribute("aria-label"),
+        haspopup: button.getAttribute("aria-haspopup"),
         expanded: button.getAttribute("aria-expanded"),
         controls: button.getAttribute("aria-controls"),
         height: button.getBoundingClientRect().height,
@@ -198,8 +253,8 @@ async function readDashboard(cdp) {
     return {
       unfinishedTitles: titles(panelFor("unfinished")),
       finishedTitles: titles(panelFor("finished")),
-      unfinishedToggle: toggleFor("toggle-unfinished-games"),
-      finishedToggle: toggleFor("toggle-finished-games"),
+      unfinishedOpener: openerFor("view-all-unfinished"),
+      finishedOpener: openerFor("view-all-finished"),
       heroPillPresent: document.body.textContent.includes("Local to this browser"),
       retentionNote: document.querySelector(".retention-note")?.textContent?.trim() ?? null,
       columnGap: gridStyle?.columnGap ?? null,
@@ -247,10 +302,26 @@ async function readPodiumState(cdp) {
     const dialog = document.querySelector("[data-podium-dialog]");
     const steps = [...document.querySelectorAll(".podium-step")].map((step) => {
       const rect = step.getBoundingClientRect();
+      const pedestal = step.querySelector(".podium-pedestal");
+      const pedestalRect = pedestal?.getBoundingClientRect() ?? null;
+      const names = [...step.querySelectorAll(".podium-player-name")];
+
       return {
         rank: step.getAttribute("data-rank"),
         heading: step.querySelector(".podium-rank-heading")?.textContent?.trim() ?? "",
-        names: [...step.querySelectorAll(".podium-player-name")].map((node) => node.textContent.trim()),
+        names: names.map((node) => node.textContent.trim()),
+        nameLineHeights: names.map((node) => {
+          const style = getComputedStyle(node);
+          return { height: node.getBoundingClientRect().height, lineHeight: parseFloat(style.lineHeight) || 0 };
+        }),
+        ranks: [...step.querySelectorAll(".podium-player-rank")].map((node) => node.textContent.trim()),
+        totals: [...step.querySelectorAll(".podium-player-total")].map((node) => node.textContent.trim()),
+        totalLabels: [...step.querySelectorAll(".podium-player-total")].map((node) => node.getAttribute("aria-label")),
+        ptsLabels: [...step.querySelectorAll(".podium-player-pts")].map((node) => node.textContent.trim()),
+        pedestalRank: pedestal?.querySelector(".podium-pedestal-rank")?.textContent?.trim() ?? "",
+        pedestalLabel: pedestal?.querySelector(".podium-pedestal-label")?.textContent?.trim() ?? "",
+        pedestalHeight: pedestalRect?.height ?? 0,
+        crownCount: step.querySelectorAll(".podium-crown[aria-hidden='true']").length,
         left: rect.left,
         right: rect.right,
         top: rect.top,
@@ -259,9 +330,37 @@ async function readPodiumState(cdp) {
         height: rect.height
       };
     });
-    const rest = document.querySelector(".podium-rest");
+    const summaryGroups = [...document.querySelectorAll(".podium-summary-group")].map((group) => ({
+      rank: group.getAttribute("data-rank"),
+      label: group.querySelector(".podium-summary-rank-label")?.textContent?.trim() ?? "",
+      cards: [...group.querySelectorAll(".podium-summary-card")].map((card) => ({
+        rank: card.querySelector(".podium-summary-card-rank")?.textContent?.trim() ?? "",
+        name: card.querySelector(".podium-summary-name")?.textContent?.trim() ?? "",
+        total: card.querySelector(".podium-summary-total")?.textContent?.trim() ?? "",
+        totalLabel: card.querySelector(".podium-summary-total")?.getAttribute("aria-label") ?? null,
+        tokenLabel: card.querySelector(".player-token")?.getAttribute("aria-label") ?? null,
+        pts: card.querySelector(".podium-summary-pts")?.textContent?.trim() ?? null
+      }))
+    }));
     const actions = [...document.querySelectorAll(".podium-actions button")];
     const close = document.querySelector("[data-action='close-podium']");
+    const corner = document.querySelector("[data-action='close-podium-corner']");
+    const dialogRect = dialog?.getBoundingClientRect() ?? null;
+    const rankOneStep = document.querySelector(".podium-step[data-rank='1']");
+    const viewportState = (node) => {
+      if (!node || !dialogRect) {
+        return { present: false, top: null, bottom: null, intersects: false, fullyVisible: false };
+      }
+      const rect = node.getBoundingClientRect();
+
+      return {
+        present: true,
+        top: rect.top,
+        bottom: rect.bottom,
+        intersects: rect.bottom > dialogRect.top && rect.top < dialogRect.bottom,
+        fullyVisible: rect.top >= dialogRect.top - 1 && rect.bottom <= dialogRect.bottom + 1
+      };
+    };
 
     return {
       present: Boolean(dialog),
@@ -271,28 +370,52 @@ async function readPodiumState(cdp) {
       groupsLabel: document.querySelector(".podium-groups")?.getAttribute("aria-label") ?? null,
       titleText: document.getElementById("podium-title")?.textContent?.trim() ?? null,
       ledeText: document.getElementById("podium-lede")?.textContent?.trim() ?? null,
+      pillText: document.querySelector(".podium-pill")?.textContent?.trim() ?? null,
+      cornerPresent: Boolean(corner),
+      cornerLabel: corner?.getAttribute("aria-label") ?? null,
+      cornerHeight: corner?.getBoundingClientRect().height ?? 0,
+      cornerWidth: corner?.getBoundingClientRect().width ?? 0,
       steps,
-      restPresent: Boolean(rest),
-      restTitle: document.getElementById("podium-rest-title")?.textContent?.trim() ?? null,
-      restRows: [...document.querySelectorAll(".podium-rest-row")].map((row) => ({
-        rank: row.querySelector(".podium-rest-rank")?.textContent?.trim() ?? "",
-        name: row.querySelector(".podium-rest-name")?.textContent?.trim() ?? "",
-        total: row.querySelector(".podium-rest-total")?.textContent?.trim() ?? "",
-        totalLabel: row.querySelector(".podium-rest-total")?.getAttribute("aria-label") ?? null,
-        tokenLabel: row.querySelector(".player-token")?.getAttribute("aria-label") ?? null
-      })),
-      restFocusableCount: rest
-        ? rest.querySelectorAll("button, input, select, textarea, a[href], [tabindex]").length
-        : 0,
+      summaryLabel: document.querySelector(".podium-summary")?.getAttribute("aria-label") ?? null,
+      summaryGroups,
+      summaryPresent: Boolean(document.querySelector(".podium-summary")),
+      restPresent: Boolean(document.querySelector(".podium-rest")),
+      tieNote: document.querySelector(".podium-tie-note")?.textContent?.trim() ?? null,
       actionLabels: actions.map((button) => button.textContent.trim()),
       actionCount: actions.length,
       focusOnClose: document.activeElement !== null && document.activeElement === close,
       focusAction: document.activeElement?.dataset?.action ?? null,
       confettiPieceCount: document.querySelectorAll(".confetti-piece").length,
       dialogScroll: dialog ? { scrollHeight: dialog.scrollHeight, clientHeight: dialog.clientHeight } : null,
+      dialogScrollTop: dialog?.scrollTop ?? null,
+      dialogViewport: dialogRect ? { top: dialogRect.top, bottom: dialogRect.bottom, height: dialogRect.height } : null,
+      titleViewport: viewportState(document.getElementById("podium-title")),
+      pillViewport: viewportState(document.querySelector(".podium-pill")),
+      rankOneCrownViewport: viewportState(rankOneStep?.querySelector(".podium-crown") ?? null),
+      rankOneStepViewport: viewportState(rankOneStep),
       horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
     };
   });
+}
+
+// The podium must open at the top (validator repair F1): the locked initial
+// focus on close-podium previously scrolled the dialog to the footer, hiding
+// the pill/title/crown. These assertions pin the visible top of the stage.
+function assertPodiumOpensAtTop(state, label) {
+  assert.equal(state.dialogScrollTop, 0, `${label}: the dialog opens at the top (scrollTop 0)`);
+  assert.equal(state.titleViewport.fullyVisible, true,
+    `${label}: #podium-title is inside the dialog viewport`);
+  assert.equal(state.pillViewport.fullyVisible, true,
+    `${label}: .podium-pill is inside the dialog viewport`);
+  assert.equal(state.rankOneCrownViewport.fullyVisible, true,
+    `${label}: the rank-1 crown is inside the dialog viewport`);
+  assert.equal(state.rankOneStepViewport.intersects, true,
+    `${label}: the rank-1 step is inside the dialog viewport`);
+  assert.ok(
+    state.rankOneStepViewport.top >= state.dialogViewport.top - 1 &&
+      state.rankOneStepViewport.top < state.dialogViewport.bottom,
+    `${label}: the rank-1 step starts inside the dialog viewport (top ${state.rankOneStepViewport.top} vs ${state.dialogViewport.top}..${state.dialogViewport.bottom})`
+  );
 }
 
 async function readFinishPrompt(cdp) {
@@ -325,9 +448,10 @@ async function readFinishPrompt(cdp) {
   });
 }
 
-// Session A (Scenario 1 + Scenario 2): both panels cap at five with a working
-// per-panel disclosure, no storage writes, the pill removed, a 32px desktop
-// gutter with no divider, and single-column 320px stacking.
+// Session A (Scenarios 5 + 6): both panels preview five cards, the per-panel
+// View all (N) opener opens a history dialog listing every game of that status
+// in order, close/Escape/backdrop return focus to that opener, no interaction
+// writes storage, ≤5 games render no opener, and 320px stays overflow-free.
 async function runDashboardSession(cdp, { consoleProblems }) {
   const seedNow = Date.now();
   const activeGames = Array.from({ length: 7 }, (_, index) => seededGame({
@@ -371,58 +495,103 @@ async function runDashboardSession(cdp, { consoleProblems }) {
   assert.deepEqual(collapsed.unfinishedTitles, ["Active 1", "Active 2", "Active 3", "Active 4", "Active 5"],
     "each panel shows its five most recent games in order");
   assert.deepEqual(collapsed.finishedTitles, ["Finished 1", "Finished 2", "Finished 3", "Finished 4", "Finished 5"]);
-  assert.deepEqual(collapsed.unfinishedToggle, {
+  assert.deepEqual(collapsed.unfinishedOpener, {
     text: "View all (7)",
     label: "View all (7) unfinished games",
-    expanded: "false",
-    controls: "unfinished-game-list",
-    height: collapsed.unfinishedToggle.height,
-    width: collapsed.unfinishedToggle.width,
+    haspopup: "dialog",
+    expanded: null,
+    controls: null,
+    height: collapsed.unfinishedOpener.height,
+    width: collapsed.unfinishedOpener.width,
     focused: false
   });
-  assert.ok(collapsed.unfinishedToggle.height >= 44 && collapsed.unfinishedToggle.width >= 44,
-    "the unfinished toggle is a >=44px focusable target");
-  assert.deepEqual(collapsed.finishedToggle, {
+  assert.ok(collapsed.unfinishedOpener.height >= 44 && collapsed.unfinishedOpener.width >= 44,
+    "the unfinished opener is a >=44px focusable target");
+  assert.deepEqual(collapsed.finishedOpener, {
     text: "View all (7)",
     label: "View all (7) finished games",
-    expanded: "false",
-    controls: "finished-game-list",
-    height: collapsed.finishedToggle.height,
-    width: collapsed.finishedToggle.width,
+    haspopup: "dialog",
+    expanded: null,
+    controls: null,
+    height: collapsed.finishedOpener.height,
+    width: collapsed.finishedOpener.width,
     focused: false
   });
-  assert.ok(collapsed.finishedToggle.height >= 44 && collapsed.finishedToggle.width >= 44);
-  const collapsedScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-dashboard-collapsed.png"));
+  assert.ok(collapsed.finishedOpener.height >= 44 && collapsed.finishedOpener.width >= 44);
+  assert.equal(await evaluate(cdp, () => document.body.textContent.includes("Show latest 5")), false,
+    "no inline Show latest 5 expansion remains");
+  const collapsedScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-dashboard-preview.png"));
 
-  await click(cdp, "[data-action='toggle-unfinished-games']");
-  const activeExpanded = await readDashboard(cdp);
-  assert.equal(activeExpanded.unfinishedTitles.length, 7, "View all expands the unfinished panel");
-  assert.deepEqual(activeExpanded.unfinishedTitles, activeGames.map((game) => game.title));
-  assert.equal(activeExpanded.unfinishedToggle.text, "Show latest 5");
-  assert.equal(activeExpanded.unfinishedToggle.label, "Show latest 5 unfinished games");
-  assert.equal(activeExpanded.unfinishedToggle.expanded, "true");
-  assert.equal(activeExpanded.unfinishedToggle.focused, true, "the freshly rendered toggle keeps focus");
+  // Unfinished dialog: every game in most-recent-first order, preview behind.
+  await click(cdp, "[data-action='view-all-unfinished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  const activeDialog = await readHistoryDialog(cdp);
+  assert.equal(activeDialog.open, true, "the unfinished opener opens a modal dialog");
+  assert.equal(activeDialog.labelledBy, "history-dialog-title");
+  assert.equal(activeDialog.describedBy, "history-dialog-count");
+  assert.equal(activeDialog.title, "All unfinished games");
+  assert.equal(activeDialog.count, "7 saved games");
+  assert.equal(activeDialog.listLabel, "All unfinished games");
+  assert.equal(activeDialog.listId, "history-unfinished-list");
+  assert.equal(activeDialog.cardTitles.length, 7, "the dialog lists every unfinished game");
+  assert.deepEqual(activeDialog.cardTitles, activeGames.map((game) => game.title),
+    "the dialog keeps the accepted most-recent-first order");
+  assert.deepEqual(activeDialog.resumeLabels, activeGames.map((game) => `Resume ${game.title}`));
+  assert.equal(activeDialog.resultLabels.length, 0);
+  assert.equal(activeDialog.focusOnClose, true, "opening focuses the close control");
+  assert.equal(activeDialog.closeLabel, "Close game history");
+  assert.ok(activeDialog.closeHeight >= 44 && activeDialog.closeWidth >= 44);
   assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw,
-    "expanding the preview never writes storage");
+    "opening the history dialog never writes storage");
+  const activeDialogScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-history-unfinished.png"));
 
-  await click(cdp, "[data-action='toggle-unfinished-games']");
-  const activeCollapsedAgain = await readDashboard(cdp);
-  assert.equal(activeCollapsedAgain.unfinishedTitles.length, 5, "collapsing restores the five-card preview");
-  assert.equal(activeCollapsedAgain.unfinishedToggle.text, "View all (7)");
-  assert.equal(activeCollapsedAgain.unfinishedToggle.focused, true);
+  await click(cdp, "[data-action='close-history']");
+  await waitForAbsent(cdp, "[data-history-dialog]");
+  const afterClose = await readDashboard(cdp);
+  assert.deepEqual(afterClose.unfinishedTitles.length, 5, "the preview stays capped at five after close");
+  assert.equal(afterClose.unfinishedOpener.focused, true, "closing returns focus to the unfinished opener");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw);
 
-  await click(cdp, "[data-action='toggle-finished-games']");
-  const finishedExpanded = await readDashboard(cdp);
-  assert.equal(finishedExpanded.finishedTitles.length, 7, "View all expands the finished panel");
-  assert.equal(finishedExpanded.finishedToggle.text, "Show latest 5");
-  assert.equal(finishedExpanded.finishedToggle.label, "Show latest 5 finished games");
-  assert.equal(finishedExpanded.finishedToggle.expanded, "true");
-  assert.equal(finishedExpanded.finishedToggle.focused, true);
+  // Escape and backdrop are the other two close paths.
+  await click(cdp, "[data-action='view-all-unfinished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  await pressEscape(cdp);
+  await waitForAbsent(cdp, "[data-history-dialog]");
+  assert.equal((await readDashboard(cdp)).unfinishedOpener.focused, true,
+    "Escape returns focus to the unfinished opener");
   assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw,
-    "expanding the finished preview never writes storage");
-  const expandedScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-dashboard-expanded.png"));
+    "Escape never writes storage");
 
-  // ≤5 games in a panel means no toggle and no wrapper.
+  await click(cdp, "[data-action='view-all-unfinished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  await clickBackdrop(cdp, 8, 400);
+  await waitForAbsent(cdp, "[data-history-dialog]");
+  assert.equal((await readDashboard(cdp)).unfinishedOpener.focused, true,
+    "a backdrop click returns focus to the unfinished opener");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw,
+    "backdrop dismissal never writes storage");
+
+  // Finished dialog: same contract with View results controls.
+  await click(cdp, "[data-action='view-all-finished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  const finishedDialog = await readHistoryDialog(cdp);
+  assert.equal(finishedDialog.open, true);
+  assert.equal(finishedDialog.title, "All finished games");
+  assert.equal(finishedDialog.count, "7 saved games");
+  assert.equal(finishedDialog.listLabel, "All finished games");
+  assert.equal(finishedDialog.listId, "history-finished-list");
+  assert.deepEqual(finishedDialog.cardTitles, finishedGames.map((game) => game.title));
+  assert.deepEqual(finishedDialog.resultLabels, finishedGames.map((game) => `View results ${game.title}`));
+  assert.equal(finishedDialog.resumeLabels.length, 0);
+  assert.equal(finishedDialog.focusOnClose, true);
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, seededRaw);
+  const finishedDialogScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-history-finished.png"));
+  await click(cdp, "[data-action='close-history']");
+  await waitForAbsent(cdp, "[data-history-dialog]");
+  assert.equal((await readDashboard(cdp)).finishedOpener.focused, true,
+    "closing returns focus to the finished opener");
+
+  // ≤5 games in a panel means no opener and no wrapper.
   const smallGames = [
     seededGame({ id: "small-active-1", title: "Small active 1", createdAt: new Date(seedNow - 60_000).toISOString(), updatedAt: new Date(seedNow - 60_000).toISOString(), names: ["Alex", "Sam"], totals: [1, 0] }),
     seededGame({ id: "small-active-2", title: "Small active 2", createdAt: new Date(seedNow - 120_000).toISOString(), updatedAt: new Date(seedNow - 120_000).toISOString(), names: ["Alex", "Sam"], totals: [2, 0] }),
@@ -439,12 +608,15 @@ async function runDashboardSession(cdp, { consoleProblems }) {
   const small = await readDashboard(cdp);
   assert.equal(small.unfinishedTitles.length, 3);
   assert.equal(small.finishedTitles.length, 2);
-  assert.equal(small.unfinishedToggle, null, "≤5 unfinished games render no toggle");
-  assert.equal(small.finishedToggle, null, "≤5 finished games render no toggle");
-  assert.equal(await evaluate(cdp, () => Boolean(document.querySelector(".panel-toggle-row"))), false,
-    "no toggle wrapper renders without a toggle");
+  assert.equal(small.unfinishedOpener, null, "≤5 unfinished games render no opener");
+  assert.equal(small.finishedOpener, null, "≤5 finished games render no opener");
+  assert.equal(await evaluate(cdp, () => Boolean(document.querySelector(".history-opener-row"))), false,
+    "no opener wrapper renders without an opener");
+  assert.equal(await evaluate(cdp, () => Boolean(document.querySelector("[data-history-dialog]"))), false,
+    "no historical list renders without an opener");
 
-  // 320px: the seeded 7+7 dashboard stacks single-column without overflow.
+  // 320px: the seeded 7+7 dashboard stacks, the dialog scrolls internally,
+  // stacks cards single-column, keeps 44px controls, and never overflows.
   await evaluate(cdp, ({ key, raw }) => localStorage.setItem(key, raw), { key: STORAGE_KEY, raw: seededRaw });
   await setViewport(cdp, { width: 320, height: 720, mobile: true });
   await navigate(cdp, baseUrl);
@@ -456,12 +628,26 @@ async function runDashboardSession(cdp, { consoleProblems }) {
   assert.equal(mobile.topGap, "20px", "the top separator returns to 20px when stacked");
   assert.equal(mobile.heroToDashboardGap, 20, "the hero and dashboard keep a 20px mobile gap");
   assert.equal(mobile.horizontalOverflow, false, "the dashboard must not overflow at 320px");
-  assert.equal(mobile.unfinishedToggle.height >= 44, true);
-  assert.equal(mobile.finishedToggle.height >= 44, true);
-  const mobileScreenshot = await screenshot(cdp, path.join(evidenceDir, "mobile-dashboard-320px.png"));
+  assert.equal(mobile.unfinishedOpener.height >= 44, true);
+  assert.equal(mobile.finishedOpener.height >= 44, true);
+  await click(cdp, "[data-action='view-all-unfinished']");
+  await waitForSelector(cdp, "[data-history-dialog]");
+  const mobileDialog = await readHistoryDialog(cdp);
+  assert.equal(mobileDialog.open, true);
+  assert.equal(mobileDialog.cardTitles.length, 7);
+  assert.ok(mobileDialog.dialogScroll.scrollHeight > mobileDialog.dialogScroll.clientHeight,
+    "the 320px history dialog scrolls internally");
+  assert.equal(mobileDialog.cardColumns, 1, "history cards stack single-column at 320px");
+  assert.ok(mobileDialog.cardWidths.every((width) => width <= mobileDialog.bodyWidth),
+    "history cards stay inside the dialog body at 320px");
+  assert.equal(mobileDialog.closeHeight >= 44, true);
+  assert.equal(mobileDialog.horizontalOverflow, false, "the 320px history dialog must not overflow");
+  const mobileScreenshot = await screenshot(cdp, path.join(evidenceDir, "mobile-history-320px.png"));
+  await pressEscape(cdp);
+  await waitForAbsent(cdp, "[data-history-dialog]");
 
   assert.deepEqual(consoleProblems, [], "the dashboard session must not produce uncaught console errors");
-  return { collapsedScreenshot, expandedScreenshot, mobileScreenshot };
+  return { collapsedScreenshot, activeDialogScreenshot, finishedDialogScreenshot, mobileScreenshot };
 }
 
 // Session B (Scenarios 3 + 4): counters stage a combined draft and Save
@@ -641,8 +827,11 @@ async function runFinishHeaderSession(cdp, { consoleProblems }) {
   return { desktopScreenshot, mobileScreenshot };
 }
 
-// Session D (Scenario 7): ordered steps (2-left / 1-center-tallest / 3-right)
-// plus the ranking-order rest list, ties, a missing rank, and a 20-tied game.
+// Session D (Scenarios 1–4): tactile steps (2-left / 1-center-tallest /
+// 3-right with Winner/Silver/Bronze pedestals, crown, pill, corner X, tie
+// note) plus ranked summary cards for every player; ties, missing ranks, and
+// a 20-tied game scroll internally; the corner X dismisses through the same
+// funnel and the three locked actions keep their contract.
 async function runPodiumSession(cdp, { consoleProblems }) {
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
   await navigate(cdp, baseUrl);
@@ -656,31 +845,67 @@ async function runPodiumSession(cdp, { consoleProblems }) {
   await click(cdp, "[data-player-id='active-game-player-3'] .add-points-action");
   await savePoints(cdp, "4");
   await finishWithPodium(cdp);
+  const rawAfterFinish = (await readSavedGamesState(cdp, STORAGE_KEY)).raw;
 
   const distinct = await readPodiumState(cdp);
+  assertPodiumOpensAtTop(distinct, "desktop distinct ranks");
   assert.equal(distinct.labelledBy, "podium-title");
   assert.equal(distinct.describedBy, "podium-lede");
   assert.equal(distinct.titleText, "Final podium");
   assert.equal(distinct.ledeText, "Congratulations to the top of the table.");
   assert.equal(distinct.groupsLabel, "Podium steps");
-  assert.deepEqual(distinct.steps.map((step) => step.rank), ["1", "2", "3"]);
+  assert.equal(distinct.pillText, "Game concluded", "the Game concluded pill renders");
+  assert.equal(distinct.cornerPresent, true, "the corner X renders");
+  assert.equal(distinct.cornerLabel, "Close podium");
+  assert.ok(distinct.cornerHeight >= 44 && distinct.cornerWidth >= 44,
+    "the corner X is a >=44px target");
+  assert.deepEqual(distinct.steps.map((step) => step.rank), ["1", "2", "3"],
+    "the steps keep rank 1 → 2 → 3 DOM order");
   assert.deepEqual(distinct.steps.map((step) => step.heading), ["Rank 1", "Rank 2", "Rank 3"]);
   assert.deepEqual(distinct.steps.map((step) => step.names), [["Alex"], ["Sam"], ["Jamie"]]);
-  assert.equal(distinct.restPresent, true, "rank >3 players open the rest section");
-  assert.equal(distinct.restTitle, "Rest of the table");
-  assert.deepEqual(
-    distinct.restRows.map((row) => [row.rank, row.name, row.total, row.totalLabel]),
-    [["4", "Taylor", "0", "Taylor: rank 4, total 0"]]
-  );
-  assert.equal(distinct.restRows[0].tokenLabel, "Player 4, Green");
-  assert.equal(distinct.restFocusableCount, 0, "the rest list contains no focusable controls");
+  assert.deepEqual(distinct.steps.map((step) => step.pedestalRank), ["1", "2", "3"]);
+  assert.deepEqual(distinct.steps.map((step) => step.pedestalLabel), ["Winner", "Silver", "Bronze"]);
+  assert.deepEqual(distinct.steps.map((step) => step.crownCount), [1, 0, 0],
+    "only rank 1 carries the aria-hidden crown");
+  assert.equal(distinct.tieNote, "Ties share rank and step position automatically");
+  assert.equal(distinct.restPresent, false, "the superseded Rest of the table section is gone");
+  assert.equal(await evaluate(cdp, () => document.body.textContent.includes("Rest of the table")), false);
+
+  // Readable contestants: readable raw totals with their own pts label and
+  // short names on one line (height within one line's line-height).
+  for (const step of distinct.steps) {
+    assert.deepEqual(step.ptsLabels, ["pts"]);
+    assert.ok(step.nameLineHeights.every(({ height, lineHeight }) => height <= lineHeight * 1.5),
+      `short names render on one line (${step.nameLineHeights.map(({ height, lineHeight }) => `${height}/${lineHeight}`).join(", ")})`);
+  }
+  assert.deepEqual(distinct.steps.map((step) => step.totalLabels), [
+    ["Alex: rank 1, total 10"],
+    ["Sam: rank 2, total 5"],
+    ["Jamie: rank 3, total 4"]
+  ]);
+
+  // Ranked summary for all players, grouped by competition rank.
+  assert.equal(distinct.summaryLabel, "Ranked summary");
+  assert.deepEqual(distinct.summaryGroups.map((group) => group.rank), ["1", "2", "3", "4"]);
+  assert.deepEqual(distinct.summaryGroups.map((group) => group.label), ["Rank 1", "Rank 2", "Rank 3", "Rank 4"]);
+  assert.deepEqual(distinct.summaryGroups.flatMap((group) => group.cards.map((card) => card.name)),
+    ["Alex", "Sam", "Jamie", "Taylor"], "every player appears in the ranked summary");
+  assert.deepEqual(distinct.summaryGroups.flatMap((group) => group.cards.map((card) => [card.rank, card.total, card.totalLabel])), [
+    ["1", "10", "Alex: rank 1, total 10"],
+    ["2", "5", "Sam: rank 2, total 5"],
+    ["3", "4", "Jamie: rank 3, total 4"],
+    ["4", "0", "Taylor: rank 4, total 0"]
+  ]);
+  assert.ok(distinct.summaryGroups.flatMap((group) => group.cards).every((card) => card.pts === "pts"));
+  assert.equal(distinct.summaryGroups[0].cards[0].tokenLabel, "Player 1, Blue");
 
   const [rankOne, rankTwo, rankThree] = distinct.steps;
   assert.ok(rankTwo.left < rankOne.left && rankOne.left < rankThree.left,
     "rank 2 sits left, rank 1 center, rank 3 right");
   assert.ok(Math.abs(rankOne.bottom - rankTwo.bottom) <= 1 && Math.abs(rankOne.bottom - rankThree.bottom) <= 1,
     "the steps share a common bottom baseline");
-  assert.ok(rankOne.height >= 240 && rankTwo.height >= 180 && rankThree.height >= 150);
+  assert.ok(rankOne.pedestalHeight > rankTwo.pedestalHeight && rankTwo.pedestalHeight > rankThree.pedestalHeight,
+    `the pedestal ladder is 1 > 2 > 3 (${rankOne.pedestalHeight}/${rankTwo.pedestalHeight}/${rankThree.pedestalHeight})`);
   assert.ok(rankOne.height > rankTwo.height && rankOne.height > rankThree.height,
     `the rank-1 silhouette is the tallest (${rankOne.height}/${rankTwo.height}/${rankThree.height})`);
   assert.deepEqual(distinct.actionLabels, [
@@ -691,12 +916,38 @@ async function runPodiumSession(cdp, { consoleProblems }) {
   assert.equal(distinct.actionCount, 3);
   assert.equal(distinct.focusOnClose, true, "initial focus stays on the dismiss control");
   assert.equal(distinct.confettiPieceCount, 14);
-  const stepsScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-steps-rest.png"));
+  const stepsScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-tactile.png"));
+
+  // Scenario 4: the corner X is a second dismiss affordance through the same
+  // funnel — heading focus, unchanged standings, byte-identical storage.
+  await click(cdp, "[data-action='close-podium-corner']");
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+  const afterCorner = await evaluate(cdp, () => ({
+    focusId: document.activeElement?.id ?? null,
+    podiumPresent: Boolean(document.querySelector("[data-podium-dialog]")),
+    totals: [...document.querySelectorAll(".active-player-total")].map((node) => node.textContent.trim())
+  }));
+  assert.equal(afterCorner.podiumPresent, false, "the corner X dismisses the podium");
+  assert.equal(afterCorner.focusId, "active-title", "the corner X returns focus to the game heading");
+  assert.deepEqual(afterCorner.totals, ["10", "5", "4", "0"], "the standings stay unchanged");
+  assert.equal((await readSavedGamesState(cdp, STORAGE_KEY)).raw, rawAfterFinish,
+    "the corner X never writes storage");
 
   // Distinct ranks at 320px: the steps stack in rank order (1 -> 2 -> 3) and
-  // reset the desktop columns/heights without forcing page-level overflow.
+  // compact their pedestals without forcing page-level overflow.
+  await goHome(cdp);
+  await createGame(cdp, "Pocket ranks", ["Alex", "Sam", "Jamie"]);
+  await savePoints(cdp, "9");
+  await click(cdp, "[data-player-id='active-game-player-2'] .add-points-action");
+  await savePoints(cdp, "6");
+  await click(cdp, "[data-player-id='active-game-player-3'] .add-points-action");
+  await savePoints(cdp, "3");
+  // Open the podium while already at 320x720 so the narrow open-at-top
+  // contract is a genuine open, not a resize of the desktop dialog.
   await setViewport(cdp, { width: 320, height: 720, mobile: true });
+  await finishWithPodium(cdp);
   const distinctMobile = await readPodiumState(cdp);
+  assertPodiumOpensAtTop(distinctMobile, "320px distinct ranks");
   assert.equal(distinctMobile.open, true, "the distinct-rank podium stays open at 320px");
   assert.deepEqual(distinctMobile.steps.map((step) => step.rank), ["1", "2", "3"],
     "the distinct-rank steps keep rank order at 320px");
@@ -705,9 +956,12 @@ async function runPodiumSession(cdp, { consoleProblems }) {
       distinctMobile.steps[1].top < distinctMobile.steps[2].top,
     "the 320px steps stack in rank order (1 -> 2 -> 3)"
   );
+  assert.ok(distinctMobile.steps[0].pedestalHeight > distinctMobile.steps[1].pedestalHeight &&
+    distinctMobile.steps[1].pedestalHeight > distinctMobile.steps[2].pedestalHeight,
+    `the compact 320px pedestals keep the 1 > 2 > 3 ladder (${distinctMobile.steps.map((step) => step.pedestalHeight).join("/")})`);
   assert.equal(distinctMobile.horizontalOverflow, false, "the 320px distinct-rank podium must not overflow");
+  const mobileDistinctScreenshot = await screenshot(cdp, path.join(evidenceDir, "mobile-podium-tactile-320px.png"));
   await setViewport(cdp, { width: 1280, height: 800, mobile: false });
-
   await pressEscape(cdp);
   await waitForAbsent(cdp, "[data-podium-dialog]");
 
@@ -722,36 +976,49 @@ async function runPodiumSession(cdp, { consoleProblems }) {
   await finishWithPodium(cdp);
 
   const missing = await readPodiumState(cdp);
+  assertPodiumOpensAtTop(missing, "desktop ties/missing rank");
   assert.deepEqual(missing.steps.map((step) => step.rank), ["1", "3"], "a missing rank renders no step");
   assert.deepEqual(missing.steps.map((step) => step.heading), ["Rank 1", "Rank 3"]);
   assert.deepEqual(missing.steps[0].names, ["Alex", "Sam"], "ties stay inside their step");
   assert.deepEqual(missing.steps[1].names, ["Jamie"]);
-  assert.equal(missing.restPresent, false, "no rest section when every player ranks ≤3");
+  assert.deepEqual(missing.steps.map((step) => step.pedestalLabel), ["Winner", "Bronze"]);
   assert.ok(!missing.steps.some((step) => step.rank === "2"), "no fabricated rank-2 step");
-  const missingScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-missing-rank.png"));
+  assert.deepEqual(missing.summaryGroups.map((group) => group.rank), ["1", "3"],
+    "the summary groups shared ranks and skips the empty rank 2");
+  assert.deepEqual(missing.summaryGroups.flatMap((group) => group.cards.map((card) => card.name)),
+    ["Alex", "Sam", "Jamie"], "all players remain in the ranked summary");
+  const missingScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-ties.png"));
   await pressEscape(cdp);
   await waitForAbsent(cdp, "[data-podium-dialog]");
 
-  // Twenty tied players: one rank-1 step, no rest list, internal scroll.
+  // Twenty tied players: one rank-1 step, twenty summary cards, internal scroll.
   await goHome(cdp);
   await createGame(cdp, "Twenty tied night", Array.from({ length: 20 }, (_, index) => `Player ${index + 1}`));
   await finishWithPodium(cdp);
 
   const twenty = await readPodiumState(cdp);
+  assertPodiumOpensAtTop(twenty, "desktop 20-tied");
   assert.deepEqual(twenty.steps.map((step) => step.rank), ["1"]);
   assert.equal(twenty.steps[0].names.length, 20, "all 20 tied players stay in one step");
-  assert.equal(twenty.restPresent, false);
+  assert.equal(twenty.summaryGroups.length, 1);
+  assert.equal(twenty.summaryGroups[0].cards.length, 20, "all 20 tied players get summary cards");
   assert.ok(twenty.dialogScroll.scrollHeight > twenty.dialogScroll.clientHeight,
     "the 20-tied podium scrolls internally at desktop");
   assert.equal(twenty.horizontalOverflow, false);
   const desktopTwentyScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-podium-20-tied.png"));
 
+  // Replay the same 20 players and open the podium at 320x720 so the narrow
+  // 20-tied open-at-top contract is also a genuine open.
+  await click(cdp, "[data-action='podium-play-again']");
+  await waitForSelector(cdp, "#score-amount");
   await setViewport(cdp, { width: 320, height: 720, mobile: true });
+  await finishWithPodium(cdp);
   const twentyMobile = await readPodiumState(cdp);
+  assertPodiumOpensAtTop(twentyMobile, "320px 20-tied");
   assert.equal(twentyMobile.open, true);
   assert.equal(twentyMobile.steps.length, 1);
   assert.equal(twentyMobile.steps[0].names.length, 20);
-  assert.equal(twentyMobile.restPresent, false);
+  assert.equal(twentyMobile.summaryGroups[0].cards.length, 20);
   assert.ok(twentyMobile.dialogScroll.scrollHeight > twentyMobile.dialogScroll.clientHeight,
     "the 20-tied podium scrolls internally at 320px");
   assert.equal(twentyMobile.horizontalOverflow, false, "the 320px podium must not overflow");
@@ -762,7 +1029,7 @@ async function runPodiumSession(cdp, { consoleProblems }) {
   await waitForAbsent(cdp, "[data-podium-dialog]");
 
   assert.deepEqual(consoleProblems, [], "the podium session must not produce uncaught console errors");
-  return { stepsScreenshot, missingScreenshot, desktopTwentyScreenshot, mobileTwentyScreenshot };
+  return { stepsScreenshot, mobileDistinctScreenshot, missingScreenshot, desktopTwentyScreenshot, mobileTwentyScreenshot };
 }
 
 // Session E (Scenario 6 + Scenario 8): Recent entries caps at five, and the
@@ -883,15 +1150,17 @@ async function main() {
     const finished = await runSession("finished-and-recent", runFinishedAndRecentSession);
     assert.equal(typeof finished.recentScreenshot, "string");
 
-    console.log("Browser refine-ui test passed: the Dashboard removes the Local pill, keeps the retention note, uses a 32px desktop gutter and top separator with no divider, previews five games per panel behind a per-panel View all (N)/Show latest 5 toggle (aria-expanded/aria-controls, focus retained, byte-identical storage, no toggle at ≤5, 320px stacking); quick counters stage one clamped combined draft with no totals/ranks/feedback/recent/storage change and Save applies it as one change (the shared stepper contract remains covered by browser-quick-score); whole active rows select through the same path as Add points while finished rows stay inert; Finish game sits in the active header with the unchanged prompt below the header/above the leaderboard and all ids/copy/focus at desktop and 320px; Recent entries caps at five while the full log persists; the podium renders ordered 2-left/1-center-tallest/3-right steps plus a ranking-order Rest of the table list, preserves ties and missing ranks, stacks distinct ranks in order at 320px, and keeps the dialog shell/actions/confetti/focus behavior; finished standings use one full-width grid track with no empty score-panel column at 1280x800 and 320x720; zero uncaught console errors.");
+    console.log("Browser refine-ui test passed: the Dashboard removes the Local pill, keeps the retention note, uses a 32px desktop gutter and top separator with no divider, previews five games per panel, and above five renders a View all (N) opener (aria-haspopup=dialog, no aria-expanded/aria-controls, no Show latest 5) that opens a scrollable history dialog listing every game of that status in most-recent-first order with the unchanged cards and Resume/View results controls; the close button, Escape, and a real backdrop click each return focus to that panel's opener and leave storage byte-identical; ≤5 games render no opener and no dialog, and 320px stacks single-column with internal dialog scrolling and 44px controls; quick counters stage one clamped combined draft with no totals/ranks/feedback/recent/storage change and Save applies it as one change (the shared stepper contract remains covered by browser-quick-score); whole active rows select through the same path as Add points while finished rows stay inert; Finish game sits in the active header with the unchanged prompt below the header/above the leaderboard and all ids/copy/focus at desktop and 320px; Recent entries caps at five while the full log persists; the podium renders tactile 2-left/1-center-tallest/3-right steps with readable contestant cards, Winner/Silver/Bronze pedestals, a rank-1 crown, the Game concluded pill, a 44px corner X, the exact tie note, and ranked summary cards for every player; ties and missing ranks preserve competition ranks, the 20-tied game scrolls internally, the corner X dismisses to the heading with byte-identical storage, the three locked actions/focus/confetti stay intact, and the podium opens at scrollTop 0 with the pill, title, rank-1 crown, and rank-1 step start inside the dialog viewport at 1280x800 and 320x720 (including the 20-tied game); 320px stacks the steps in rank order; finished standings use one full-width grid track with no empty score-panel column; zero uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       dashboard.collapsedScreenshot,
-      dashboard.expandedScreenshot,
+      dashboard.activeDialogScreenshot,
+      dashboard.finishedDialogScreenshot,
       dashboard.mobileScreenshot,
       scoring.finishedScreenshot,
       finishHeader.desktopScreenshot,
       finishHeader.mobileScreenshot,
       podium.stepsScreenshot,
+      podium.mobileDistinctScreenshot,
       podium.missingScreenshot,
       podium.desktopTwentyScreenshot,
       podium.mobileTwentyScreenshot,

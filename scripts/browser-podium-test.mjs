@@ -111,17 +111,25 @@ async function readPodiumState(cdp) {
       names: [...group.querySelectorAll(".podium-player-name")].map((node) => node.textContent.trim()),
       ranks: [...group.querySelectorAll(".podium-player-rank")].map((node) => node.textContent.trim()),
       totals: [...group.querySelectorAll(".podium-player-total")].map((node) => node.textContent.trim()),
-      totalLabels: [...group.querySelectorAll(".podium-player-total")].map((node) => node.getAttribute("aria-label"))
+      totalLabels: [...group.querySelectorAll(".podium-player-total")].map((node) => node.getAttribute("aria-label")),
+      ptsLabels: [...group.querySelectorAll(".podium-player-pts")].map((node) => node.textContent.trim()),
+      pedestalRank: group.querySelector(".podium-pedestal-rank")?.textContent?.trim() ?? "",
+      pedestalLabel: group.querySelector(".podium-pedestal-label")?.textContent?.trim() ?? "",
+      crownCount: group.querySelectorAll(".podium-crown[aria-hidden='true']").length
     }));
-    const restSection = document.querySelector(".podium-rest");
-    const restRows = [...document.querySelectorAll(".podium-rest-row")].map((row) => ({
-      rank: row.querySelector(".podium-rest-rank")?.textContent?.trim() ?? "",
-      name: row.querySelector(".podium-rest-name")?.textContent?.trim() ?? "",
-      total: row.querySelector(".podium-rest-total")?.textContent?.trim() ?? "",
-      totalLabel: row.querySelector(".podium-rest-total")?.getAttribute("aria-label") ?? null,
-      tokenLabel: row.querySelector(".player-token")?.getAttribute("aria-label") ?? null
+    const summaryGroups = [...document.querySelectorAll(".podium-summary-group")].map((group) => ({
+      rank: group.getAttribute("data-rank"),
+      label: group.querySelector(".podium-summary-rank-label")?.textContent?.trim() ?? "",
+      cards: [...group.querySelectorAll(".podium-summary-card")].map((card) => ({
+        rank: card.querySelector(".podium-summary-card-rank")?.textContent?.trim() ?? "",
+        name: card.querySelector(".podium-summary-name")?.textContent?.trim() ?? "",
+        total: card.querySelector(".podium-summary-total")?.textContent?.trim() ?? "",
+        totalLabel: card.querySelector(".podium-summary-total")?.getAttribute("aria-label") ?? null,
+        tokenLabel: card.querySelector(".player-token")?.getAttribute("aria-label") ?? null
+      }))
     }));
     const close = document.querySelector("[data-action='close-podium']");
+    const corner = document.querySelector("[data-action='close-podium-corner']");
     const layer = document.querySelector("[data-podium-confetti]");
     const pieces = [...document.querySelectorAll(".confetti-piece")];
     let keyframeEnd = null;
@@ -152,18 +160,21 @@ async function readPodiumState(cdp) {
       describedBy: dialog?.getAttribute("aria-describedby") ?? null,
       titleText: document.getElementById("podium-title")?.textContent?.trim() ?? null,
       ledeText: document.getElementById("podium-lede")?.textContent?.trim() ?? null,
+      pillText: document.querySelector(".podium-pill")?.textContent?.trim() ?? null,
+      cornerPresent: Boolean(corner),
+      cornerLabel: corner?.getAttribute("aria-label") ?? null,
+      cornerHeight: corner?.getBoundingClientRect().height ?? 0,
       groupHeadings: groups.map((group) => group.heading),
       groupRanks: groups.map((group) => group.dataRank),
       groupsLabel: document.querySelector(".podium-groups")?.getAttribute("aria-label") ?? null,
       groups,
       allPodiumNames: groups.flatMap((group) => group.names),
       allPodiumRanks: groups.flatMap((group) => group.ranks),
-      restPresent: Boolean(restSection),
+      summaryLabel: document.querySelector(".podium-summary")?.getAttribute("aria-label") ?? null,
+      summaryGroups,
+      restPresent: Boolean(document.querySelector(".podium-rest")),
       restTitle: document.getElementById("podium-rest-title")?.textContent?.trim() ?? null,
-      restRows,
-      restFocusableCount: restSection
-        ? restSection.querySelectorAll("button, input, select, textarea, a[href], [tabindex]").length
-        : 0,
+      tieNote: document.querySelector(".podium-tie-note")?.textContent?.trim() ?? null,
       closePresent: Boolean(close),
       closeLabel: close?.textContent?.trim() ?? null,
       closeHeight: close?.getBoundingClientRect().height ?? 0,
@@ -328,14 +339,34 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
     "an empty rank-2 group must be omitted entirely");
   assert.deepEqual(podium.groupRanks, ["1", "3"], "steps carry their rank in data-rank order");
   assert.equal(podium.groupsLabel, "Podium steps", "the ordered steps carry the podium-steps label");
-  assert.equal(podium.restPresent, false, "every player ranks ≤3, so no rest section renders");
+  assert.equal(podium.pillText, "Game concluded", "the Game concluded pill renders");
+  assert.equal(podium.cornerPresent, true, "the corner X renders beside the pill");
+  assert.equal(podium.cornerLabel, "Close podium");
+  assert.ok(podium.cornerHeight >= 44, "the corner X keeps a >=44px target");
+  assert.equal(podium.tieNote, "Ties share rank and step position automatically");
+  assert.deepEqual(podium.groups.map((group) => group.pedestalLabel), ["Winner", "Bronze"]);
+  assert.deepEqual(podium.groups.map((group) => group.pedestalRank), ["1", "3"]);
+  assert.deepEqual(podium.groups.map((group) => group.crownCount), [1, 0],
+    "only the rank-1 step carries the aria-hidden crown");
+  assert.equal(podium.restPresent, false, "the superseded Rest of the table section is gone");
   assert.deepEqual(podium.groups[0].names, ["Alex", "Sam"], "both tied rank-1 players appear");
   assert.deepEqual(podium.groups[0].ranks, ["1", "1"], "ties are never collapsed");
   assert.deepEqual(podium.groups[0].totals, ["12", "12"]);
+  assert.deepEqual(podium.groups[0].ptsLabels, ["pts", "pts"], "each contestant total has its pts label");
   assert.deepEqual(podium.groups[0].totalLabels, ["Alex: rank 1, total 12", "Sam: rank 1, total 12"],
     "podium totals must keep the accepted label convention");
   assert.deepEqual(podium.groups[1].names, ["Jamie"]);
   assert.deepEqual(podium.groups[1].totalLabels, ["Jamie: rank 3, total 8"]);
+  // Ranked summary lists every player by competition rank.
+  assert.equal(podium.summaryLabel, "Ranked summary");
+  assert.deepEqual(podium.summaryGroups.map((group) => group.rank), ["1", "3"]);
+  assert.deepEqual(podium.summaryGroups.map((group) => group.label), ["Rank 1", "Rank 3"]);
+  assert.deepEqual(podium.summaryGroups.flatMap((group) => group.cards.map((card) => [card.rank, card.name, card.total, card.totalLabel])), [
+    ["1", "Alex", "12", "Alex: rank 1, total 12"],
+    ["1", "Sam", "12", "Sam: rank 1, total 12"],
+    ["3", "Jamie", "8", "Jamie: rank 3, total 8"]
+  ]);
+  assert.ok(podium.summaryGroups.flatMap((group) => group.cards).every((card) => card.tokenLabel.startsWith("Player ")));
   // Superseded by show-player-numbers: token labels now speak the derived
   // setup-order badge ("Player {n}, {color}") instead of the MVP-era
   // "Player marker" wording; the frozen total labels below are untouched.
@@ -413,23 +444,29 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
   assert.deepEqual(cutoffPodium.groups[0].names, ["Ada"]);
   assert.deepEqual(cutoffPodium.groups[1].names, ["Ben", "Cal"], "both rank-2 players appear");
   assert.deepEqual(cutoffPodium.allPodiumRanks, ["1", "2", "2"]);
-  // Superseded by refine-ui-after-testing: rank >3 players now appear in the
-  // in-dialog "Rest of the table" list instead of being excluded entirely.
+  // Superseded by refine-podium-and-history-modal: rank >3 players no longer
+  // use the rest list; the ranked summary lists every player, including rank 4.
   assert.ok(!cutoffPodium.allPodiumNames.includes("Dee") && !cutoffPodium.allPodiumNames.includes("Eli"),
     "rank-4 players stay out of the podium steps");
-  assert.equal(cutoffPodium.restPresent, true, "rank-4 players open the rest-of-the-table list");
-  assert.equal(cutoffPodium.restTitle, "Rest of the table");
+  assert.equal(cutoffPodium.restPresent, false, "the superseded rest-of-the-table list is gone");
+  assert.deepEqual(cutoffPodium.groupRanks, ["1", "2"]);
+  assert.deepEqual(cutoffPodium.groups.map((group) => group.pedestalLabel), ["Winner", "Silver"]);
+  assert.deepEqual(cutoffPodium.groups.map((group) => group.crownCount), [1, 0]);
+  assert.deepEqual(cutoffPodium.summaryGroups.map((group) => group.rank), ["1", "2", "4"],
+    "the summary keeps competition ranks, including the shared rank 4");
   assert.deepEqual(
-    cutoffPodium.restRows.map((row) => [row.rank, row.name, row.total, row.totalLabel]),
+    cutoffPodium.summaryGroups.flatMap((group) => group.cards.map((card) => [card.rank, card.name, card.total, card.totalLabel])),
     [
+      ["1", "Ada", "10", "Ada: rank 1, total 10"],
+      ["2", "Ben", "5", "Ben: rank 2, total 5"],
+      ["2", "Cal", "5", "Cal: rank 2, total 5"],
       ["4", "Dee", "0", "Dee: rank 4, total 0"],
       ["4", "Eli", "0", "Eli: rank 4, total 0"]
     ],
-    "the rest list keeps ranking order with rank, name, total, and the frozen label"
+    "the ranked summary lists every player in ranking order with the frozen labels"
   );
-  assert.equal(cutoffPodium.restRows[0].tokenLabel, "Player 4, Green",
-    "rest rows reuse the numbered player-token label");
-  assert.equal(cutoffPodium.restFocusableCount, 0, "the rest list adds no focusable controls");
+  assert.equal(cutoffPodium.summaryGroups[2].cards[0].tokenLabel, "Player 4, Green",
+    "summary cards reuse the numbered player-token label");
   assert.deepEqual(cutoffPodium.standingsNames, ["Ada", "Ben", "Cal", "Dee", "Eli"],
     "rank-4 players remain visible in the full standings behind the modal");
   assert.deepEqual(cutoffPodium.standingsRanks, ["1", "2", "2", "4", "4"]);
@@ -450,7 +487,23 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
   assert.equal(cutoffReopened.podiumDialogPresent, false, "reopen must not re-celebrate");
   await goHome(cdp);
 
-  // Game 3: dismissal path 3 — a real click on the ::backdrop.
+  // Game 3: dismissal path 3 — the corner X (a second affordance through the
+  // same funnel, outside the three locked product actions).
+  await createGame(cdp, "Corner farewell", ["Nia", "Ola"]);
+  await finishGame(cdp);
+
+  const cornerPodium = await readPodiumState(cdp);
+  assert.equal(cornerPodium.open, true);
+  assert.equal(cornerPodium.focusOnClose, true, "initial focus stays on the footer dismiss control");
+  await click(cdp, "[data-action='close-podium-corner']");
+  await waitForAbsent(cdp, "[data-podium-dialog]");
+  const afterCorner = await readActiveState(cdp);
+  assert.equal(afterCorner.podiumDialogPresent, false, "the corner X dismisses the podium");
+  assert.equal(afterCorner.focusOnHeading, true, "the corner X returns focus to the game heading");
+  assert.deepEqual(afterCorner.names, ["Nia", "Ola"]);
+
+  // Game 4: dismissal path 4 — a real click on the ::backdrop.
+  await goHome(cdp);
   await createGame(cdp, "Backdrop farewell", ["Finn", "Gia"]);
   await finishGame(cdp);
 
@@ -467,7 +520,7 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
   assert.equal(afterBackdrop.focusOnHeading, true);
   assert.deepEqual(afterBackdrop.names, ["Finn", "Gia"]);
 
-  // Game 4: Space activates the focused Close button.
+  // Game 5: Space activates the focused Close button.
   await goHome(cdp);
   await createGame(cdp, "Space farewell", ["Hana", "Ivan"]);
   await finishGame(cdp);
@@ -483,7 +536,7 @@ async function runTiesAndDismissalsSession(cdp, { consoleProblems }) {
     finishedCards: document.querySelectorAll("article[aria-labelledby='finished-title'] .saved-game").length,
     unfinishedCards: document.querySelectorAll("article[aria-labelledby='unfinished-title'] .saved-game").length
   }));
-  assert.equal(home.finishedCards, 4, "all four finished games must be listed once");
+  assert.equal(home.finishedCards, 5, "all five finished games must be listed once");
   assert.equal(home.unfinishedCards, 0, "no phantom unfinished cards may appear");
 
   assert.deepEqual(consoleProblems, [], "the ties session must not produce uncaught console errors");
@@ -503,11 +556,13 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
   assert.equal(desktopPodium.open, true);
   assert.deepEqual(desktopPodium.groupHeadings, ["Rank 1"], "twenty tied players form one rank-1 group");
   assert.deepEqual(desktopPodium.groupRanks, ["1"]);
-  assert.equal(desktopPodium.restPresent, false, "all-tied players rank 1, so no rest section renders");
+  assert.equal(desktopPodium.restPresent, false, "the superseded rest list is gone");
   assert.equal(desktopPodium.groups[0].names.length, 20, "none of the 20 tied players may be dropped");
   assert.ok(desktopPodium.groups[0].names.every((name, index) => name === `Player ${index + 1}`),
     "tied players keep creation order");
   assert.ok(desktopPodium.allPodiumRanks.every((rank) => rank === "1"), "every tied player shows rank 1");
+  assert.equal(desktopPodium.summaryGroups.length, 1, "twenty tied players form one summary group");
+  assert.equal(desktopPodium.summaryGroups[0].cards.length, 20, "all twenty summary cards render");
   assert.ok(desktopPodium.dialogScroll.scrollHeight > desktopPodium.dialogScroll.clientHeight,
     "the 20-tied podium must scroll internally at 1280x800");
   assert.ok(desktopPodium.closeHeight >= 44, "the Close control needs a roughly 44px target");
@@ -573,6 +628,8 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
     return {
       dialogOpen: Boolean(dialog?.open),
       focusAction: active?.dataset?.action ?? null,
+      focusTag: active?.tagName ?? null,
+      focusIsDialog: Boolean(dialog && active === dialog),
       insideDialog: Boolean(dialog && active && dialog.contains(active)),
       onBody: active === document.body,
       backgroundControlFocused: Boolean(active && active !== document.body && !dialog.contains(active)),
@@ -599,8 +656,12 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
   const secondTabState = await readTrapState();
   assert.equal(secondTabState.dialogOpen, true);
   assert.equal(secondTabState.backgroundControlFocused, false);
-  assert.ok(secondTabState.focusAction === "podium-play-again" || secondTabState.onBody,
-    "wrapping from the last action must reach the primary one or transiently rest on body");
+  assert.ok(
+    secondTabState.focusAction === "podium-play-again" ||
+      secondTabState.focusAction === "close-podium-corner" ||
+      secondTabState.onBody,
+    "wrapping from the last action must reach the first control (corner X or primary) or transiently rest on body"
+  );
 
   await pressTab(cdp);
   const thirdTabState = await readTrapState();
@@ -608,10 +669,15 @@ async function runTwentyTiedSession(cdp, { consoleProblems }) {
   assert.equal(thirdTabState.backgroundControlFocused, false);
   assert.equal(thirdTabState.insideDialog, true,
     "the next Tab must recapture focus into the dialog");
-  assert.ok(thirdTabState.focusAction === "podium-play-again" || thirdTabState.focusAction === "close-podium",
-    "the recapture must land on one of the dialog's actions");
-  assert.notEqual(thirdTabState.outlineStyle, "none", "keyboard focus must show a visible outline");
-  assert.notEqual(thirdTabState.outlineWidth, "0px");
+  assert.ok(
+    ["podium-play-again", "close-podium", "close-podium-corner"].includes(thirdTabState.focusAction) ||
+      thirdTabState.focusIsDialog,
+    `the recapture must land on one of the dialog's controls or the dialog itself (saw ${thirdTabState.focusAction}/${thirdTabState.focusTag})`
+  );
+  if (!thirdTabState.focusIsDialog) {
+    assert.notEqual(thirdTabState.outlineStyle, "none", "keyboard focus must show a visible outline");
+    assert.notEqual(thirdTabState.outlineWidth, "0px");
+  }
 
   await pressEscape(cdp);
   await waitForAbsent(cdp, "[data-podium-dialog]");
@@ -782,7 +848,7 @@ async function main() {
       setupSource: `localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, "not-json{");`
     });
 
-    console.log("Browser podium test passed: confirming finish opens a native dialog podium (aria-labelledby/aria-describedby) focused on the dismiss control — labeled 'Close & view full standings' since extend-podium-actions, which also added the Play-again primary and the Save-&-exit secondary around it; the ordered steps carry data-rank order and a 'Podium steps' label, ranks 1,1,3 put both tied players on one step with no fabricated rank-2 group, the rank-4 pair from 10/5/5/0/0 appears in the ranking-order 'Rest of the table' list (rank/token/name/total, no focusables) instead of the steps, and 20 tied players all appear in one scrolling rank-1 group at 1280x800 and 320x720 with no page-level overflow; the native trap walks the three podium actions without ever reaching background controls (the no-wrap steps land in DOM order, the wrap from the last action follows the documented Chrome first-focusable-or-transient-body quirk, and the next Tab recaptures into the dialog), and the dismiss control (click or Space), Escape (from the initial focus and after the Tab cycle), and backdrop click each dismiss back to the heading with unchanged standings and no re-celebration on reopen; confetti is 14 deterministic aria-hidden pieces animating once (<=3.5s, forwards, ends at opacity 0) and computes display:none under emulated prefers-reduced-motion; the celebration opens under blocked writes and invalid-read suppression while stored payloads stay byte-identical with zero phantom cards, code-only warnings, and no uncaught console errors.");
+    console.log("Browser podium test passed: confirming finish opens a native dialog podium (aria-labelledby/aria-describedby) focused on the footer dismiss control — labeled 'Close & view full standings' since extend-podium-actions, which also added the Play-again primary and the Save-&-exit secondary around it; the tactile steps carry data-rank order and a 'Podium steps' label, each contestant shows its numbered token plus a readable name and raw total with a pts label, the pedestals carry Winner/Silver/Bronze with rank-specific heights, only rank 1 carries the aria-hidden crown, the Game concluded pill and a 44px corner X render, and the exact tie note sits above ranked summary cards for every player; ranks 1,1,3 put both tied players on one step with no fabricated rank-2 group, the rank-4 pair from 10/5/5/0/0 appears in the ranking-order summary (rank/token/name/total with frozen labels) instead of the steps, and 20 tied players all appear in one scrolling rank-1 step plus twenty summary cards at 1280x800 and 320x720 with no page-level overflow; the native trap walks the three podium actions without ever reaching background controls (the wrap may reach the corner X or primary action or transiently rest on body, and the next Tab recaptures into the dialog), and the footer dismiss control (click or Space), the corner X, Escape (from the initial focus and after the Tab cycle), and a real backdrop click each dismiss back to the heading with unchanged standings and no re-celebration on reopen; confetti is 14 deterministic aria-hidden pieces animating once (<=3.5s, forwards, ends at opacity 0) and computes display:none under emulated prefers-reduced-motion; the celebration opens under blocked writes and invalid-read suppression while stored payloads stay byte-identical with zero phantom cards, code-only warnings, and no uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       tieScreenshots.podiumScreenshot,
       path.join(evidenceDir, "desktop-podium-20-tied.png"),

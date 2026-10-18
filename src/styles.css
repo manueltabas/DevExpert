@@ -598,16 +598,57 @@ h3 {
   justify-self: end;
 }
 
-/* Per-panel preview disclosure (refine-ui-after-testing): a ≥44px secondary
-   action below the capped list; transient state only, no divider. */
-.panel-toggle-row {
+/* Per-panel history modal opener (refine-podium-and-history-modal superseded
+   the refine-ui inline toggle): a >=44px secondary action below the capped
+   list. It opens a dialog, so it carries aria-haspopup only. */
+.history-opener-row {
   display: flex;
   justify-content: flex-start;
   margin-top: var(--space-md);
 }
 
-.panel-toggle {
+.history-opener {
   min-width: 44px;
+}
+
+/* Dashboard history dialog: mirrors the podium modal shell, with a header
+   close control, a count line, and the unchanged card list scrolling inside. */
+.history-dialog {
+  width: min(calc(100vw - 24px), 720px);
+  max-height: calc(100svh - 24px);
+  padding: 0;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  overflow: auto;
+}
+
+.history-dialog::backdrop {
+  background: rgba(24, 28, 35, 0.44);
+}
+
+.history-dialog-body {
+  padding: clamp(var(--space-md), 4vw, var(--space-lg));
+}
+
+.history-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.history-dialog-title {
+  font-size: var(--text-headline-md);
+}
+
+.history-dialog-count {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
 }
 
 .retention-note {
@@ -1176,7 +1217,7 @@ h3 {
 }
 
 .podium-dialog {
-  width: min(calc(100vw - 24px), 560px);
+  width: min(calc(100vw - 24px), 640px);
   max-height: calc(100svh - 24px);
   padding: 0;
   color: var(--text);
@@ -1194,6 +1235,55 @@ h3 {
 .podium-body {
   position: relative;
   padding: clamp(var(--space-md), 4vw, var(--space-lg));
+}
+
+/* Top line of the podium body: the Game concluded pill and the corner X.
+   The X is a second dismiss affordance, not a fourth product action. */
+.podium-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.podium-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 12px;
+  color: var(--tertiary);
+  background: var(--tertiary-tint);
+  border-radius: var(--radius-full);
+  font-size: var(--text-label-sm);
+  font-weight: 700;
+}
+
+.podium-corner-close,
+.history-close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--text);
+  background: var(--surface-container);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.podium-corner-close:hover,
+.history-close:hover {
+  background: var(--surface-container-high);
+}
+
+.icon-glyph {
+  width: 20px;
+  height: 20px;
+  display: block;
 }
 
 .podium-confetti {
@@ -1259,9 +1349,10 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-/* Ordered podium steps (refine-ui-after-testing): rank 2 sits left, rank 1
-   center and tallest, rank 3 right, all on a common bottom baseline. Missing
-   ranks simply leave their column empty; ≤600px restacks in rank order. */
+/* Tactile podium steps (refine-podium-and-history-modal superseded the
+   refine-ui step cards and rest list): rank 2 sits left, rank 1 center and
+   tallest, rank 3 right, all sharing a common bottom baseline. Missing ranks
+   simply leave their column empty; <=600px restacks in rank order. */
 .podium-groups {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1275,19 +1366,16 @@ h3 {
 .podium-step[data-rank="1"] {
   grid-column: 2;
   grid-row: 1;
-  min-height: 240px;
 }
 
 .podium-step[data-rank="2"] {
   grid-column: 1;
   grid-row: 1;
-  min-height: 180px;
 }
 
 .podium-step[data-rank="3"] {
   grid-column: 3;
   grid-row: 1;
-  min-height: 150px;
 }
 
 .podium-group {
@@ -1296,14 +1384,157 @@ h3 {
   flex-direction: column;
   justify-content: flex-end;
   margin: 0;
-  padding: 12px;
-  background: var(--surface-container);
-  border: 1px solid var(--border-cool);
-  border-radius: var(--radius-md);
+  padding: 0;
 }
 
-.podium-group.is-rank-one {
-  background: var(--surface-strong);
+/* The rank heading and the contestant rank stay readable to assistive tech
+   and existing reads, but the pedestal already shows the rank visually. */
+.podium-rank-heading,
+.podium-player-rank {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.podium-crown {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 4px;
+  color: var(--yellow);
+}
+
+.podium-crown-glyph {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+.podium-players {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two-column contestant card: token | text column. The name takes the
+   remaining width and wraps on words; the total keeps its own line. */
+.podium-player {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.podium-player .player-token {
+  align-self: center;
+}
+
+.podium-player-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.podium-player-name {
+  min-width: 0;
+  font-size: var(--text-body-md);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.podium-player-points {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.podium-player-total {
+  font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.podium-player-pts {
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+}
+
+/* Rank-specific pedestals: 144/96/72px desktop ladder, rank 1 tallest. */
+.podium-pedestal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 12px 8px;
+  border: 1px solid var(--border-cool);
+  border-bottom: 0;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.podium-step[data-rank="1"] .podium-pedestal {
+  min-height: 144px;
+  background: var(--tertiary-tint);
+  border-color: rgba(136, 58, 0, 0.28);
+}
+
+.podium-step[data-rank="2"] .podium-pedestal {
+  min-height: 96px;
+  background: var(--surface-container);
+}
+
+.podium-step[data-rank="3"] .podium-pedestal {
+  min-height: 72px;
+  background: var(--secondary-container);
+}
+
+.podium-pedestal-rank {
+  color: var(--text);
+  font-size: 2rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.podium-step[data-rank="1"] .podium-pedestal-rank {
+  color: var(--tertiary);
+  font-size: 2.25rem;
+}
+
+.podium-pedestal-label {
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.podium-step[data-rank="1"] .podium-pedestal-label {
+  color: var(--tertiary);
+}
+
+.podium-step[data-rank="3"] .podium-pedestal-label {
+  color: var(--secondary-on-container);
 }
 
 @media (max-width: 600px) {
@@ -1314,69 +1545,73 @@ h3 {
   .podium-step[data-rank] {
     grid-column: auto;
     grid-row: auto;
-    min-height: 0;
+  }
+
+  .podium-step[data-rank="1"] .podium-pedestal {
+    min-height: 88px;
+  }
+
+  .podium-step[data-rank="2"] .podium-pedestal {
+    min-height: 72px;
+  }
+
+  .podium-step[data-rank="3"] .podium-pedestal {
+    min-height: 56px;
+  }
+
+  .podium-pedestal {
+    padding: 8px;
+  }
+
+  .podium-step[data-rank="3"] .podium-pedestal-rank {
+    font-size: 1.4rem;
+  }
+
+  .podium-step[data-rank="3"] .podium-pedestal-label {
+    font-size: 10px;
+    letter-spacing: 0.04em;
   }
 }
 
-.podium-rank-heading {
-  margin: 0 0 10px;
-  font-size: 1.05rem;
+/* Tie handling note between the steps and the ranked summary. */
+.podium-tie-note {
+  margin: var(--space-sm) 0 0;
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  text-align: center;
 }
 
-.podium-players {
+/* Ranked summary: every player in ranking order, grouped by competition rank.
+   The steps celebrate the top three; these cards are the scannable full table. */
+.podium-summary {
   display: grid;
   gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.podium-player {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 10px;
-  background: var(--surface);
-  border: 1px solid var(--border-cool);
-  border-radius: 10px;
-}
-
-.podium-player-rank {
-  min-width: 2ch;
-  font-size: 1.35rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
-}
-
-.podium-player-name {
-  min-width: 0;
-  font-size: 1.02rem;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-}
-
-.podium-player-total {
-  min-width: 48px;
-  font-size: 1.35rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
-}
-
-/* "Rest of the table" (refine-ui-after-testing): rank >3 players below the
-   steps, ranking order, no focusable controls, distinct row classes. */
-.podium-rest {
   margin-top: var(--space-md);
 }
 
-.podium-rest-title {
-  margin: 0 0 8px;
-  font-size: 1.05rem;
+.podium-summary-group {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--surface-container);
+  border-radius: var(--radius-md);
 }
 
-.podium-rest-list {
+.podium-summary-group[data-rank="1"] {
+  background: var(--tertiary-tint);
+}
+
+.podium-summary-rank-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.podium-summary-cards {
   display: grid;
   gap: 8px;
   margin: 0;
@@ -1384,38 +1619,51 @@ h3 {
   list-style: none;
 }
 
-.podium-rest-row {
-  display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr) auto;
-  gap: 12px;
+.podium-summary-card {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  padding: 8px 10px;
-  background: var(--surface-container);
-  border: 1px solid var(--border-cool);
-  border-radius: 10px;
-}
-
-.podium-rest-rank {
-  min-width: 2ch;
-  font-size: 1.1rem;
-  font-variant-numeric: tabular-nums;
-  font-weight: 800;
-  text-align: right;
-}
-
-.podium-rest-name {
+  gap: 10px;
   min-width: 0;
-  font-size: var(--text-label-md);
-  font-weight: 600;
-  overflow-wrap: anywhere;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
-.podium-rest-total {
-  min-width: 40px;
-  font-size: 1.1rem;
+.podium-summary-card-rank {
+  min-width: 1.5ch;
   font-variant-numeric: tabular-nums;
   font-weight: 800;
-  text-align: right;
+  text-align: center;
+}
+
+.podium-summary-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.podium-summary-points {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.podium-summary-total {
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.podium-summary-pts {
+  color: var(--muted);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
 }
 
 /* Podium actions (extend-podium-actions): the primary replay control spans
@@ -1451,28 +1699,16 @@ h3 {
     padding: 8px;
   }
 
-  .podium-player-rank {
-    min-width: 1.5ch;
-    font-size: 1.15rem;
-  }
-
   .podium-player-total {
-    min-width: 40px;
-    font-size: 1.15rem;
+    font-size: 1.2rem;
   }
 
-  .podium-rest-row {
+  .podium-summary-card {
     gap: 8px;
-    padding: 8px;
+    padding: 8px 10px;
   }
 
-  .podium-rest-rank {
-    min-width: 1.5ch;
-    font-size: 1rem;
-  }
-
-  .podium-rest-total {
-    min-width: 34px;
+  .podium-summary-total {
     font-size: 1rem;
   }
 }

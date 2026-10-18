@@ -24,7 +24,7 @@ The score-change sequence is authoritative. The **recent entries** view and the 
 - Add a signed whole-number amount to one player; other totals do not change. Negative totals are valid. Quick tap counters and the stepper are input conveniences that stage the same pending draft; Save points applies the combined draft as one ordinary score change (one log entry, one save).
 - Rank players by total descending. Rank equals one plus the number of players with a strictly higher total.
 - Equal totals share rank: 12, 12, 8 gives ranks 1, 1, 3. Preserve a stable display order within ties without declaring a tie winner.
-- Podium positions are ranks 1–3; include every tied player at those ranks. Some positions can be empty and some can contain multiple players. Players ranked above 3 remain in the podium's ranking-order "Rest of the table" list, and the full standings stay available.
+- Podium positions are ranks 1–3; include every tied player at those ranks. Some positions can be empty and some can contain multiple players. Podium steps show the top three; a ranked summary then lists every player, including ranks above 3, in competition-rank groups, and the full standings stay available.
 - Undo reverses the most recent score change in the active game and recalculates standings, recent entries, and distribution. It does not undo finishing a game. Further undo depth is an implementation-time decision; only latest-change undo is promised.
 
 ## Persistence and boundaries

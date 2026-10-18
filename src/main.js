@@ -20,7 +20,7 @@ import {
   recentScoreChanges,
   undoLastScoreChange
 } from "./score.js";
-import { podiumRestRows, podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
+import { podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
 import { finishGame, displayGameTitle, formatRelativeTimestamp, renameGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
@@ -44,8 +44,7 @@ const state = {
   titleEditOpen: false,
   titleDraft: "",
   titleEditFeedback: null,
-  showAllActiveGames: false,
-  showAllFinishedGames: false,
+  historyDialog: null,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -55,10 +54,29 @@ const state = {
   nextRowNumber: MIN_PLAYERS + 1
 };
 
-// Dashboard preview cap (refine-ui-after-testing): each panel renders at most
-// this many of its most recent saved games until the transient per-panel
-// toggle expands it. The full list stays in the persisted payload untouched.
+// Dashboard preview cap (refine-ui-after-testing; modal since
+// refine-podium-and-history-modal): each panel renders at most this many of its
+// most recent saved games. Above the cap, a transient per-panel "View all (N)"
+// opener opens a modal listing every game of that status. The full list stays
+// in the persisted payload untouched.
 const PANEL_PREVIEW_LIMIT = 5;
+
+// The two history dialog variants share one renderer; the value stored in
+// state.historyDialog is exactly one of these keys (or null when closed).
+const HISTORY_DIALOGS = {
+  active: {
+    title: "All unfinished games",
+    countNoun: "saved games",
+    listId: "history-unfinished-list",
+    openerAction: "view-all-unfinished"
+  },
+  finished: {
+    title: "All finished games",
+    countNoun: "saved games",
+    listId: "history-finished-list",
+    openerAction: "view-all-finished"
+  }
+};
 
 // Quick tap presets (add-quick-score-entry): the mockup's seven signed
 // amounts, locked as a local constant. Each tap stages the points draft
@@ -145,8 +163,7 @@ function handleNavDashboard() {
   state.view = "home";
   state.errors = [];
   state.limitMessage = "";
-  state.showAllActiveGames = false;
-  state.showAllFinishedGames = false;
+  state.historyDialog = null;
   render();
   appRoot.querySelector("[data-home-heading]")?.focus();
 }
@@ -250,12 +267,10 @@ function renderHome() {
         ${renderStorageNotice()}
         ${renderDroppedEntriesNote()}
         ${activeGames.length > 0 ? `
-        ${renderSavedGameList(activeGames.slice(0, state.showAllActiveGames ? activeGames.length : PANEL_PREVIEW_LIMIT), "unfinished-game-list")}
-        ${renderPanelToggle({
-          action: "toggle-unfinished-games",
-          listId: "unfinished-game-list",
+        ${renderSavedGameList(activeGames.slice(0, PANEL_PREVIEW_LIMIT), "unfinished-game-list")}
+        ${renderHistoryOpener({
+          action: "view-all-unfinished",
           total: activeGames.length,
-          expanded: state.showAllActiveGames,
           noun: "unfinished games"
         })}
         ` : `
@@ -284,12 +299,10 @@ function renderHome() {
           </div>
         </div>
         ${finishedGames.length > 0 ? `
-        ${renderFinishedGameList(finishedGames.slice(0, state.showAllFinishedGames ? finishedGames.length : PANEL_PREVIEW_LIMIT))}
-        ${renderPanelToggle({
-          action: "toggle-finished-games",
-          listId: "finished-game-list",
+        ${renderFinishedGameList(finishedGames.slice(0, PANEL_PREVIEW_LIMIT), "finished-game-list")}
+        ${renderHistoryOpener({
+          action: "view-all-finished",
           total: finishedGames.length,
-          expanded: state.showAllFinishedGames,
           noun: "finished games"
         })}
         ` : `
@@ -299,6 +312,7 @@ function renderHome() {
         </div>`}
       </article>
     </section>
+    ${state.historyDialog ? renderHistoryDialog(state.historyDialog) : ""}
   `;
 
   appRoot.querySelector("[data-action='new-game']")?.addEventListener("click", () => {
@@ -320,20 +334,18 @@ function renderHome() {
     });
   });
 
-  // Per-panel disclosure (refine-ui-after-testing): transient only — flipping
-  // the boolean re-renders the home view (never writes storage) and focus
-  // returns to the freshly rendered toggle.
-  appRoot.querySelector("[data-action='toggle-unfinished-games']")?.addEventListener("click", () => {
-    state.showAllActiveGames = !state.showAllActiveGames;
-    render();
-    appRoot.querySelector("[data-action='toggle-unfinished-games']")?.focus();
+  // History modal openers (refine-podium-and-history-modal): each opener sets
+  // the transient variant, re-renders home with the preview still behind the
+  // modal, and bindHistoryEvents opens/focuses it. Nothing writes storage.
+  appRoot.querySelector("[data-action='view-all-unfinished']")?.addEventListener("click", () => {
+    openHistoryDialog("active");
   });
 
-  appRoot.querySelector("[data-action='toggle-finished-games']")?.addEventListener("click", () => {
-    state.showAllFinishedGames = !state.showAllFinishedGames;
-    render();
-    appRoot.querySelector("[data-action='toggle-finished-games']")?.focus();
+  appRoot.querySelector("[data-action='view-all-finished']")?.addEventListener("click", () => {
+    openHistoryDialog("finished");
   });
+
+  bindHistoryEvents();
 }
 
 function getStorageNotice() {
@@ -395,28 +407,26 @@ function paintStorageNotice() {
   region.append(message);
 }
 
-function renderSavedGameList(games, listId) {
+function renderSavedGameList(games, listId = "unfinished-game-list", label = "Saved games") {
   return `
-    <ol id="${listId}" class="saved-game-list" aria-label="Saved games">
+    <ol id="${listId}" class="saved-game-list" aria-label="${escapeAttribute(label)}">
       ${games.map((game) => renderSavedGameCard(game)).join("")}
     </ol>
   `;
 }
 
-// Per-panel "View all (N)" / "Show latest 5" disclosure. It renders only when
-// the panel holds more than the preview cap; the visible text is a substring
-// of the accessible name, and aria-controls points at the panel's own list.
-function renderPanelToggle({ action, listId, total, expanded, noun }) {
+// Per-panel "View all (N)" opener (refine-podium-and-history-modal superseded
+// the refine-ui inline toggle). It renders only above the five-card preview and
+// is a dialog opener: visible text is a substring of the accessible name, with
+// aria-haspopup="dialog". No aria-expanded/aria-controls and no wrapper at ≤5.
+function renderHistoryOpener({ action, total, noun }) {
   if (total <= PANEL_PREVIEW_LIMIT) {
     return "";
   }
 
-  const label = expanded ? "Show latest 5" : `View all (${total})`;
-  const accessibleName = expanded ? `Show latest 5 ${noun}` : `View all (${total}) ${noun}`;
-
   return `
-    <div class="panel-toggle-row">
-      <button type="button" class="secondary-action panel-toggle" data-action="${action}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="${listId}" aria-label="${accessibleName}">${label}</button>
+    <div class="history-opener-row">
+      <button type="button" class="secondary-action history-opener" data-action="${action}" aria-haspopup="dialog" aria-label="View all (${total}) ${noun}">View all (${total})</button>
     </div>
   `;
 }
@@ -446,9 +456,9 @@ function renderSavedGameCard(game) {
   `;
 }
 
-function renderFinishedGameList(games) {
+function renderFinishedGameList(games, listId = "finished-game-list", label = "Finished games") {
   return `
-    <ol id="finished-game-list" class="saved-game-list" aria-label="Finished games">
+    <ol id="${listId}" class="saved-game-list" aria-label="${escapeAttribute(label)}">
       ${games.map((game) => renderFinishedGameCard(game)).join("")}
     </ol>
   `;
@@ -477,6 +487,104 @@ function renderFinishedGameCard(game) {
       <button type="button" class="secondary-action resume-action" data-action="view-results" data-game-id="${gameId}" aria-label="View results ${escapeAttribute(displayGameTitle(game))}">View results</button>
     </li>
   `;
+}
+
+// History modal (refine-podium-and-history-modal): one per panel variant,
+// listing every saved game of that status in the accepted most-recent-first
+// order using the unchanged card renderers. The five-card preview stays
+// rendered behind the modal; opening and closing are display-only and never
+// write storage. The list renderers are generalized with a dialog-scoped id
+// and accessible label so the background preview keeps its accepted ids.
+function renderHistoryDialog(kind) {
+  const config = HISTORY_DIALOGS[kind];
+
+  if (!config) {
+    return "";
+  }
+
+  const games = orderSavedGamesForDisplay(state.savedGames)
+    .filter((game) => game.status === (kind === "active" ? "active" : "finished"));
+  const list = kind === "active"
+    ? renderSavedGameList(games, config.listId, config.title)
+    : renderFinishedGameList(games, config.listId, config.title);
+
+  return `
+    <dialog class="history-dialog" data-history-dialog aria-labelledby="history-dialog-title" aria-describedby="history-dialog-count">
+      <div class="history-dialog-body">
+        <div class="history-dialog-header">
+          <div>
+            <h2 id="history-dialog-title" class="history-dialog-title">${config.title}</h2>
+            <p id="history-dialog-count" class="history-dialog-count">${games.length} ${config.countNoun}</p>
+          </div>
+          <button type="button" class="history-close" data-action="close-history" aria-label="Close game history">
+            <svg class="icon-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
+          </button>
+        </div>
+        ${list}
+      </div>
+    </dialog>
+  `;
+}
+
+function openHistoryDialog(kind) {
+  if (!HISTORY_DIALOGS[kind]) {
+    return;
+  }
+
+  state.historyDialog = kind;
+  render();
+}
+
+// Close button, Escape, and backdrop click all funnel through one synchronous
+// cleanup: close the live dialog, clear the transient variant, re-render home,
+// and return focus to that panel's opener. A queued `close` event from a
+// detached dialog is ignored (the accepted modal precedent).
+function handleHistoryClose(kind) {
+  if (state.historyDialog !== kind) {
+    return;
+  }
+
+  state.historyDialog = null;
+  render();
+  appRoot.querySelector(`[data-action='${HISTORY_DIALOGS[kind].openerAction}']`)?.focus();
+}
+
+function bindHistoryEvents() {
+  const dialog = appRoot.querySelector("[data-history-dialog]");
+  const kind = state.historyDialog;
+
+  if (!dialog || !HISTORY_DIALOGS[kind]) {
+    return;
+  }
+
+  const dismissHistory = () => {
+    if (dialog.open) {
+      dialog.close();
+    }
+    handleHistoryClose(kind);
+  };
+
+  dialog.querySelector("[data-action='close-history']")?.addEventListener("click", dismissHistory);
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) {
+      dismissHistory();
+    }
+  });
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    dismissHistory();
+  });
+  dialog.addEventListener("close", () => {
+    if (!dialog.isConnected) {
+      return;
+    }
+    handleHistoryClose(kind);
+  });
+
+  if (!dialog.open) {
+    dialog.showModal();
+  }
+  dialog.querySelector("[data-action='close-history']")?.focus();
 }
 
 // Card recency label (track-game-activity): the storage-owned `updatedAt`
@@ -512,8 +620,7 @@ function handleResume(gameId) {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
-  state.showAllActiveGames = false;
-  state.showAllFinishedGames = false;
+  state.historyDialog = null;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -968,7 +1075,7 @@ function renderFinishedGame(game) {
 }
 
 function renderPodiumDialog(podium, game) {
-  // Badge numbers derive once for the dialog's rows from the same game
+  // Badge numbers derive once for the dialog from the same game
   // (show-player-numbers); positional numbers are immune to any stored marker.
   const numbers = playerNumbers(game);
   const groups = [1, 2, 3]
@@ -982,23 +1089,40 @@ function renderPodiumDialog(podium, game) {
       return `
         <li class="podium-group podium-step${rank === 1 ? " is-rank-one" : ""}" data-rank="${rank}">
           <h3 class="podium-rank-heading">Rank ${rank}</h3>
+          ${rank === 1 ? renderPodiumCrown() : ""}
           <ul class="podium-players">
             ${rows.map((row) => renderPodiumPlayer(row.player, row.rank, numbers.get(row.player.id))).join("")}
           </ul>
+          ${renderPodiumPedestal(rank)}
         </li>
       `;
     })
     .join("");
-  // Ranks above 3 belong in the "Rest of the table" list below the steps
-  // (refine-ui-after-testing): ranking order, distinct row classes, no
-  // focusable controls, and no section at all when everyone ranks ≤3.
-  const restRows = podiumRestRows(game);
-  const rest = restRows.length > 0 ? `
-        <section class="podium-rest" aria-labelledby="podium-rest-title">
-          <h3 id="podium-rest-title" class="podium-rest-title">Rest of the table</h3>
-          <ul class="podium-rest-list">
-            ${restRows.map((row) => renderPodiumRestRow(row, numbers.get(row.player.id))).join("")}
-          </ul>
+
+  // Ranked summary (refine-podium-and-history-modal superseded the
+  // refine-ui "Rest of the table" list): every player in ranking order, grouped
+  // by competition rank, so the steps celebrate the top three while the cards
+  // stay the scannable full table. Display-only, fresh derivation per render.
+  const summaryGroups = [];
+  for (const row of rankPlayers(game)) {
+    const last = summaryGroups[summaryGroups.length - 1];
+
+    if (last && last.rank === row.rank) {
+      last.rows.push(row);
+    } else {
+      summaryGroups.push({ rank: row.rank, rows: [row] });
+    }
+  }
+  const summary = summaryGroups.length > 0 ? `
+        <section class="podium-summary" aria-label="Ranked summary">
+          ${summaryGroups.map((group) => `
+          <div class="podium-summary-group" data-rank="${group.rank}">
+            <p class="podium-summary-rank-label">Rank ${group.rank}</p>
+            <ul class="podium-summary-cards">
+              ${group.rows.map((row) => renderPodiumSummaryCard(row, numbers.get(row.player.id))).join("")}
+            </ul>
+          </div>
+          `).join("")}
         </section>
   ` : "";
 
@@ -1006,10 +1130,18 @@ function renderPodiumDialog(podium, game) {
     <dialog class="podium-dialog" data-podium-dialog aria-labelledby="podium-title" aria-describedby="podium-lede">
       <div class="podium-body">
         <div class="podium-confetti" data-podium-confetti aria-hidden="true">${renderPodiumConfetti()}</div>
+        <div class="podium-topline">
+          <span class="podium-pill">Game concluded</span>
+          <button type="button" class="podium-corner-close" data-action="close-podium-corner" aria-label="Close podium">
+            <svg class="icon-glyph" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"></path></svg>
+          </button>
+        </div>
         <p class="podium-game-title">${escapeHtml(displayGameTitle(game))}</p>
         <h2 id="podium-title" class="podium-title">Final podium</h2>
         <p id="podium-lede" class="podium-lede">Congratulations to the top of the table.</p>
-        <ol class="podium-groups" aria-label="Podium steps">${groups}</ol>${rest}
+        <ol class="podium-groups" aria-label="Podium steps">${groups}</ol>
+        <p class="podium-tie-note">Ties share rank and step position automatically</p>
+        ${summary}
         <div class="podium-actions">
           <button type="button" class="primary-action podium-play-again" data-action="podium-play-again">Play again (same players, reset scores)</button>
           <div class="podium-actions-row">
@@ -1022,6 +1154,10 @@ function renderPodiumDialog(podium, game) {
   `;
 }
 
+// Contestant card above the pedestal (Decision 1): token + a text column
+// (name over {total} pts). Names get the remaining width and normal word
+// wrapping; the total stays readable on its own line. The rank stays present
+// for existing reads but is visually hidden (the pedestal carries it visibly).
 function renderPodiumPlayer(player, rank, playerNumber) {
   const color = getColor(player.color);
 
@@ -1029,21 +1165,53 @@ function renderPodiumPlayer(player, rank, playerNumber) {
     <li class="podium-player">
       <span class="podium-player-rank">${rank}</span>
       <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
-      <span class="podium-player-name">${escapeHtml(player.name)}</span>
-      <span class="podium-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+      <span class="podium-player-text">
+        <span class="podium-player-name">${escapeHtml(player.name)}</span>
+        <span class="podium-player-points">
+          <span class="podium-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+          <span class="podium-player-pts">pts</span>
+        </span>
+      </span>
     </li>
   `;
 }
 
-function renderPodiumRestRow({ player, rank }, playerNumber) {
+function renderPodiumCrown() {
+  return `
+    <span class="podium-crown" aria-hidden="true">
+      <svg class="podium-crown-glyph" viewBox="0 0 24 24" focusable="false"><path d="M3 8l4.4 3.1L12 4l4.6 7.1L21 8l-1.7 10H4.7L3 8Z" fill="currentColor"></path></svg>
+    </span>
+  `;
+}
+
+// Rank-specific pedestal block below each step's contestants. Ranks 1/2/3 get
+// Winner/Silver/Bronze labels; CSS supplies the tinted surfaces and the
+// 144/96/72px height ladder so rank 1 is visibly tallest.
+function renderPodiumPedestal(rank) {
+  const labels = { 1: "Winner", 2: "Silver", 3: "Bronze" };
+
+  return `
+    <div class="podium-pedestal" data-pedestal-rank="${rank}">
+      <span class="podium-pedestal-rank">${rank}</span>
+      <span class="podium-pedestal-label">${labels[rank]}</span>
+    </div>
+  `;
+}
+
+// Ranked summary card: leading rank numeral, badge token, name, and total with
+// its own visible pts label. Keeps the frozen total aria-label convention.
+function renderPodiumSummaryCard({ player, rank }, playerNumber) {
   const color = getColor(player.color);
 
   return `
-    <li class="podium-rest-row">
-      <span class="podium-rest-rank">${rank}</span>
+    <li class="podium-summary-card">
+      <span class="podium-summary-card-rank">${rank}</span>
       <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
-      <span class="podium-rest-name">${escapeHtml(player.name)}</span>
-      <span class="podium-rest-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+      <span class="podium-summary-name">${escapeHtml(player.name)}</span>
+      <span class="podium-summary-points">
+        <span class="podium-summary-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+        <span class="podium-summary-pts">pts</span>
+      </span>
     </li>
   `;
 }
@@ -1088,6 +1256,9 @@ function bindPodiumEvents() {
   };
 
   appRoot.querySelector("[data-action='close-podium']")?.addEventListener("click", dismissPodium);
+  // Corner X (refine-podium-and-history-modal): a second dismiss affordance,
+  // not a fourth product action — it routes through the same funnel.
+  appRoot.querySelector("[data-action='close-podium-corner']")?.addEventListener("click", dismissPodium);
 
   // Podium actions (extend-podium-actions). Replay delegates to the unchanged
   // handlePlayAgain after closing the live dialog; the queued `close` event
@@ -1135,7 +1306,13 @@ function bindPodiumEvents() {
     if (!dialog.open) {
       dialog.showModal();
     }
-    appRoot.querySelector("[data-action='close-podium']")?.focus();
+    // Focus stays on the locked footer dismiss control, but a native focus move
+    // scrolls the dialog to its target. Reset the scroll position before and
+    // after the prevented-scroll focus so the celebratory stage always opens at
+    // the top (pill/title/crown first) instead of at the footer actions.
+    dialog.scrollTop = 0;
+    appRoot.querySelector("[data-action='close-podium']")?.focus({ preventScroll: true });
+    dialog.scrollTop = 0;
   }
 }
 
@@ -1175,8 +1352,7 @@ function handlePodiumExitDashboard() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
-  state.showAllActiveGames = false;
-  state.showAllFinishedGames = false;
+  state.historyDialog = null;
   render();
   appRoot.querySelector("[data-home-heading]")?.focus();
 }
@@ -1380,8 +1556,7 @@ function bindActiveEvents() {
     state.titleEditOpen = false;
     state.titleDraft = "";
     state.titleEditFeedback = null;
-    state.showAllActiveGames = false;
-    state.showAllFinishedGames = false;
+    state.historyDialog = null;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
   });
@@ -1571,8 +1746,7 @@ function handlePlayAgain() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
-  state.showAllActiveGames = false;
-  state.showAllFinishedGames = false;
+  state.historyDialog = null;
   persistActiveGameSnapshot();
   render();
   paintStorageNotice();
@@ -1842,8 +2016,7 @@ function resetSetup() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
-  state.showAllActiveGames = false;
-  state.showAllFinishedGames = false;
+  state.historyDialog = null;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;
