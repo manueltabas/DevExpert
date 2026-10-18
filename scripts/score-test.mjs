@@ -13,7 +13,9 @@ import {
 } from "../src/score.js";
 
 assert.equal(MAX_SCORE_ABS, 1_000_000);
-assert.equal(RECENT_ENTRIES_LIMIT, 8);
+// refine-ui-after-testing superseded the cap-8 window: Recent entries shows
+// the five newest renderable changes.
+assert.equal(RECENT_ENTRIES_LIMIT, 5);
 
 // parseScoreAmount: empty values
 assert.deepEqual(parseScoreAmount(""), { error: "empty" });
@@ -321,7 +323,7 @@ const capLog = Array.from({ length: 12 }, (_, index) => ({
 const cappedGame = { ...game, changes: [...capLog, { id: "cap-ghost", playerId: "ghost", amount: 5 }] };
 const capped = recentScoreChanges({ game: cappedGame });
 assert.equal(capped.length, RECENT_ENTRIES_LIMIT);
-assert.deepEqual(capped.map((entry) => entry.change.id), capLog.slice(4).map((change) => change.id).reverse());
+assert.deepEqual(capped.map((entry) => entry.change.id), capLog.slice(7).map((change) => change.id).reverse());
 const smaller = recentScoreChanges({ game: cappedGame, limit: 2 });
 assert.deepEqual(smaller.map((entry) => entry.change.id), ["cap-12", "cap-11"]);
 const skipDoesNotConsumeCap = recentScoreChanges({ game: recentLogGame, limit: 3 });
@@ -350,4 +352,4 @@ assert.equal(appliedRecentEntries[0].change.amount, 7);
 assert.equal(appliedRecentEntries[0].player.id, samId);
 assert.equal(appliedRecentEntries[0].change.at, "2026-10-15T14:00:00.000Z");
 
-console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, per-change `at` ISO stamps from the injectable clock, change log, safe-integer guard, immutability, latest-change undo, and recentScoreChanges (newest-first pairs, cap 8, player resolution, empty guards).");
+console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, per-change `at` ISO stamps from the injectable clock, change log, safe-integer guard, immutability, latest-change undo, and recentScoreChanges (newest-first pairs, cap 5, player resolution, empty guards).");

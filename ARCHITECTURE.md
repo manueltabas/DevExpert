@@ -31,14 +31,16 @@ one player's total and appends `{ id, playerId, amount, at }` to the in-memory
 injectable clock, so per-entry ages survive reloads), `undoLastScoreChange`,
 which pops the newest log entry, restores that player's total, and returns a
 new game object without mutating the input, and `recentScoreChanges`, the pure
-view behind the Recent entries panel: the newest `RECENT_ENTRIES_LIMIT` (8)
+view behind the Recent entries panel: the newest `RECENT_ENTRIES_LIMIT` (5)
 changes as `{ change, player }` pairs, newest first, skipping entries whose
 `playerId` resolves to no player, never mutating its input.
 `src/standings.js` contains the pure ranking helpers
 `rankPlayers(game)`, which derives competition ranks (`1 +` the count of
 strictly higher totals, so ties share a rank) in descending total order with
 creation-order ties, `podiumRows(game)`, which filters that ranking to
-every row with rank ≤ 3 without collapsing ties or mutating its input, and
+every row with rank ≤ 3 without collapsing ties or mutating its input,
+`podiumRestRows(game)`, the complementary filter for rows ranked above 3 in
+ranking order (fresh array, guards inherited from `rankPlayers`), and
 `scoreDistribution(game)`, the pure view behind the active leaderboard's score
 distribution block: it returns `{ gameTotal, rows }` where `gameTotal` is the
 signed sum of all finite player totals and `rows` lists one
@@ -72,8 +74,13 @@ deterministic tie-breaks. `src/main.js` persists the active game after every
 successful game mutation (start, save points, undo, finish, rename, replay),
 renders
 the home "Unfinished games" list from the active saved games and the
-"Finished games" list from the finished ones, and resumes a saved game by
-restoring it as the active game — so undo works immediately after a reload,
+"Finished games" list from the finished ones. Each panel renders only its five
+most recent games (`PANEL_PREVIEW_LIMIT`) until a transient per-panel
+`state.showAllActiveGames`/`state.showAllFinishedGames` boolean expands it
+through a `View all (N)` / `Show latest 5` toggle; the slice is render-time only,
+toggling never writes, and the booleans reset at every Dashboard arrival. It
+resumes a saved game by restoring it as the active game — so undo works
+immediately after a reload,
 undone changes never resurrect, and finished games reopen read-only. Ranks
 stay render-time only and are never persisted.
 
@@ -115,7 +122,8 @@ uses it for the dashboard cards' `Updated {token}` recency label
 entries panel's time cells, which render the token with an initial capital or
 a muted `—` when an entry predates the per-change `at` stamp. The panel
 itself (`renderRecentEntries`) is a display-only block inside the active
-view's score panel between the score form and the finish section: an eyebrow
+view's score panel after the score form (its last block — Finish game moved to
+the header): an eyebrow
 header with the `Last: {name} {signedAmount}` undo-context line and an
 `aria-label="Recent entries"` list of newest-first rows (player token,
 escaped name, signed `{+|-}{amount} pts`, relative time). It has no
@@ -153,10 +161,16 @@ re-celebrates), and `renderFinishedGame` then renders the app's only `<dialog>`
 — a `.podium-dialog` opened with `showModal()` (guarded) that derives its
 content at render time from `podiumRows(state.activeGame)`: a muted
 `.podium-game-title` line showing `displayGameTitle(game)` as the first
-content element (before the suite-frozen "Final podium" title), ascending "Rank 1"
-to "Rank 3" groups with every tied player included and empty rank groups
-omitted, tokens/rows/aria-labels reusing the accepted conventions, and a
-decorative `aria-hidden` confetti layer of 14 deterministic pieces animated
+content element (before the suite-frozen "Final podium" title), an ordered
+`aria-label="Podium steps"` list of `.podium-step` items with `data-rank` and
+every tied player included (empty rank steps omitted), and a
+`Rest of the table` section below the steps built from `podiumRestRows(game)`
+when any player ranks above 3 — ranking order, distinct `.podium-rest-row`
+classes, rank/token/name/total, no focusable controls. Desktop CSS places
+rank 2 in the first column, rank 1 center and tallest, rank 3 in the third
+column on a common bottom baseline; at ≤600px the steps stack in rank order.
+Tokens/rows/aria-labels reuse the accepted conventions, and a decorative
+`aria-hidden` confetti layer of 14 deterministic pieces animated
 by one CSS `@keyframes` rule (single iteration, ends invisible) that a
 `prefers-reduced-motion: reduce` rule suppresses with `display: none`. The
 dialog is labelled (`aria-labelledby`) and described (`aria-describedby`),
@@ -232,7 +246,7 @@ persistence slice is implemented.
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
   design-system, game-title, game-activity, quick-score, player-number,
-  score-distribution, and podium-actions flows.
+  score-distribution, podium-actions, and refine-ui flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -247,11 +261,13 @@ persistence slice is implemented.
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
   games list, the storage-health notices with the write-safety rule, the
-  dismissible podium dialog with confetti, the inline active-header title
-  edit form with its save trigger, the `beforeinput` entry guard
-  that keeps the score field to plain signed-integer drafts, the quick tap
-  counters and the signed stepper (a new UI entry into the existing score-save
-  trigger, with the stepper staging the draft), the dashboard
+  dismissible podium dialog with ordered steps, the rest-of-the-table list,
+  and confetti, the inline active-header title edit form with its save
+  trigger, the `beforeinput` entry guard that keeps the score field to plain
+  signed-integer drafts, the shared quick-counter/stepper draft helper
+  (`applyDraftDelta`, no render or save), the dashboard five-game preview and
+  per-panel disclosure, whole-row selection for active leaderboard rows,
+  the header finish opener with its prompt below the header, the dashboard
    cards' deterministic `Updated {token}` recency label, the display-only
    Recent entries panel in the active score panel, the player-number
    badge wiring (each numbered surface derives `playerNumbers(game)` once per
@@ -274,7 +290,8 @@ persistence slice is implemented.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
   the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
-  never collapsed), and the score-distribution derivation `scoreDistribution`
+  never collapsed), the complementary `podiumRestRows` (rank > 3 in ranking
+  order), and the score-distribution derivation `scoreDistribution`
   (positive-total rows in display order, largest-remainder integer percents
   over the positive-total sum, signed `gameTotal`, guards, no mutation).
 - `src/game.js`: pure game lifecycle: the one-way `finishGame` transition from
@@ -384,25 +401,33 @@ persistence slice is implemented.
   byte-identical storage, seeded-stamp sessions asserting exact
   `Just now`/`10m ago`/`3h ago`/`2d ago`/absolute tokens and the
   `Updated {token}` card chain (createdAt fallback, bare `Updated`), the cap
-  at 8 rows with skipped ghost entries, legacy no-`at` rows degrading to
+  at 5 rows with skipped ghost entries (after expanding the seeded Dashboard's
+  five-card preview), legacy no-`at` rows degrading to
   muted `—`, undo derivation with fresh `updatedAt` and byte-identical no-op
   undos, blocked-write undo with the unchanged notice, frozen finished stamps
   with no finished panel and a byte-identical replay original, and the
    320×720/1280×800 overflow, focusable-count, frozen `--muted`, AA contrast,
    and zero-console-error baseline — using isolated headless Chrome.
 - `scripts/browser-quick-score-test.mjs`: desktop/mobile quick-entry checks —
-   every preset counter applying immediately through the ordinary save path
-   with the exact accepted messages, cleared drafts, `Last:` context, envelope
-   version 1, and focus returned to the pressed counter; undo walking counter
-   changes back like any other change with a byte-identical no-op; the stepper
-   staging from a 0 baseline with plain-integer clamped output and
-   byte-identical no-save proof plus an ordinary stepped-draft save and the
-   exact zero message; counters discarding typed drafts without summing; the
-   ≥44px targets, Decision 6 accessible names, group label, Decision 6 tab
-   order, and real-key Enter repeat-press walk at 320×720 and 1280×800; and
-   blocked-write in-memory applies with the unchanged notice plus zero
-   counters/stepper in finished and active-empty views — using isolated
-   headless Chrome.
+   every preset counter and the stepper sharing one draft helper that starts
+   from a 0 baseline, writes plain clamped integer text, and never renders or
+   saves (byte-identical payload, unchanged totals/ranks/feedback/recent
+   entries, focus retained on the pressed control); Save points applying the
+   combined draft as exactly one ordinary change with the exact accepted
+   message and focus contract; the draft-specific accessible names and group
+   label; the ≥44px targets, tab order, and real-key Enter repeat-press walk at
+   320×720 and 1280×800; and blocked-write in-memory staging/save with the
+   unchanged notice plus zero counters/stepper in finished and active-empty
+   views — using isolated headless Chrome.
+- `scripts/browser-refine-ui-test.mjs`: desktop/mobile post-playtest refinement
+   checks — the Dashboard five-game preview with per-panel View all (N)/Show
+   latest 5 toggles (aria-expanded/aria-controls, focus, byte-identical
+   storage, no toggle ≤5), pill removal, 32px desktop gutter, 320px stacking;
+   staged combined counter drafts and whole-row selection with inert finished
+   rows; the header Finish game opener and prompt placement; the five-row
+   Recent entries cap; ordered podium steps with the ranking-order Rest of the
+   table list, ties, missing ranks, and 20 tied players; and the single-track
+   full-width finished layout — using isolated headless Chrome.
 - `scripts/browser-player-numbers-test.mjs`: desktop/mobile player-number
    badge checks — positional setup rows that renumber on removal with the
    accepted positional labels; badges 1..N in setup order on the leaderboard,
@@ -452,21 +477,18 @@ scientific notation and other exact-integer non-plain text with the existing
 path. No value is ever silently rewritten; a transient decimal such as `2.5`
 still reaches the save-side decimals message exactly as accepted.
 
-Quick entry is two input conveniences over the same path, never a second
-pipeline. The seven quick tap counters (a locked local preset list) overwrite
-the draft with their signed amount and call the unchanged `handleScoreSubmit`
-— which only gained a returned success boolean — so a tap passes the identical
-parse gate, persists through `persistActiveGameSnapshot()` (still exactly six
-call sites: a counter is a new UI entry into the score-save trigger, not a
-seventh trigger), and inherits every accepted message, the undo semantics, the
-recent-entries derivation, and the storage rules verbatim; on success focus
-returns to the pressed counter, on rejection the accepted input focus stays.
-The − / + stepper is a pure draft edit: it reads the numeric draft (0 baseline
-for empty or unparseable drafts — a `type="number"` input sanitizes transient
-shapes like `12.` or a lone sign to `""`), writes plain integer text clamped to
-±`MAX_SCORE_ABS`, and never saves, re-renders, or paints feedback, so the
-stored payload stays byte-identical across any number of steps; the stepped
-draft then saves as one ordinary change.
+Quick entry is one staged-draft convenience over the existing save path, never
+a second pipeline. The seven quick tap counters (a locked local preset list)
+and the − / + stepper both call `applyDraftDelta(delta)`: read the trimmed
+`#score-amount` value with `parseInt` (0 baseline for empty or unparseable
+drafts — a `type="number"` input sanitizes transient shapes like `12.` or a
+lone sign to `""`), add the delta, clamp to ±`MAX_SCORE_ABS`, and write plain
+integer text. It never renders, paints feedback, or saves, so totals, ranks,
+recent entries, focus, and the stored payload stay untouched across any number
+of taps; Save points then applies the combined draft through the unchanged
+`handleScoreSubmit`, passing the identical parse gate and persisting through
+`persistActiveGameSnapshot()` (still exactly six call sites — quick entry is
+not a seventh trigger) as one ordinary change.
 
 Every successful game mutation (starting a game, saving points, a successful
 undo, confirming Finish game, renaming the active game, and replaying a
@@ -488,15 +510,20 @@ that sets `status: "finished"`; it accepts only active games, returns a new
 object without touching players, totals, the change log, or any field beyond
 `status`, and there is no un-finish. A finished game renders as the read-only
 variant of the active view — full final standings with render-time ranks, a
-`role="status"` explanation, and zero score mutation controls — and reopening
-one from home restores exactly those guarantees. Storage-suppression
+`role="status"` explanation, zero score mutation controls, and an
+`is-finished` single-track layout so the standings span the full content width
+— and reopening one from home restores exactly those guarantees. The active
+view's Finish game opener now lives in `.active-header`; opening it renders the
+unchanged prompt below the header and above the leaderboard panel (the score
+panel has no finish section). Storage-suppression
 interplay is unchanged: finishing still proceeds in memory when writes are
 suppressed or fail, and no phantom finished card can appear on home. The
 podium celebration sits on top of that finished view as a display-only modal:
 it opens only on a successful confirm-finish (including under storage
-failures), shows every rank ≤ 3 player with ties never collapsed, dismisses
-back to the heading without changing anything, and never reopens on a mere
-revisit. The `close`-event fallback listener ignores events delivered for a
+failures), shows every rank ≤ 3 player in ordered steps with ties never
+collapsed and every rank >3 player in the ranking-order Rest of the table
+list, dismisses back to the heading without changing anything, and never
+reopens on a mere revisit. The `close`-event fallback listener ignores events delivered for a
 dialog that has already left the DOM: Chrome queues `close` as a task that can
 arrive late on hidden pages, and a stale event from a dismissed podium must
 never clobber a later podium's open state (finish → dismiss → replay → finish

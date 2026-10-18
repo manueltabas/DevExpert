@@ -106,11 +106,11 @@
   `—` time cell, and nothing rewrites the stored payload on load. Finished
   stamps freeze at the finish persist; replay must never re-persist the
   original. The Recent entries panel is display-only over
-  `recentScoreChanges` (cap `RECENT_ENTRIES_LIMIT = 8`, newest first,
+  `recentScoreChanges` (cap `RECENT_ENTRIES_LIMIT = 5`, newest first,
   unresolvable players skipped, no interactive controls, no new live
-  region), renders only in the active view's score panel, and its header
-  `Last: {name} {signedAmount}` must always show the sign character (never
-  color alone).
+  region), renders only in the active view's score panel as its last block,
+  and its header `Last: {name} {signedAmount}` must always show the sign
+  character (never color alone). The full change log stays persisted.
 - The score field must accept only plain signed-integer text, guarded at both
   layers: a `beforeinput` guard on `#score-amount` must cancel every insertion
   whose prospective value is not a plain signed-integer draft (letters such as
@@ -124,23 +124,22 @@
   `1e30` → out-of-range), and scientific notation such as `1e3` — superseding
   the documented add-player-score semantic-parse decision — is unsavable
   through any path.
-- Quick entry controls are input conveniences over the ordinary score-change
-  path, never a second pipeline and never new state or storage: the quick tap
-  counter preset set is locked to the mockup's seven (+1, +5, +10, +25, −1,
-  −5, −10), each tap applies immediately by overwriting the draft with the
-  preset (discarding any typed draft — never summing) and calling the
-  unchanged score-submit handler, so every tap passes the same parse gate,
-  persists through `persistActiveGameSnapshot()` (still exactly six call
-  sites — a counter is a new UI entry into the score-save trigger, not a
-  seventh trigger), and inherits the exact accepted messages, undo semantics,
-  recent-entries derivation, and storage rules; on success focus must return
-  to the pressed counter, and on rejection the accepted input focus is kept.
-  The − / + stepper must stage the draft and never save: it reads the numeric
-  draft with a 0 baseline for empty or unparseable drafts, writes plain
-  integer text clamped to ±1,000,000, and causes no save, no re-render, and
-  no feedback. Counter controls must never submit the form (`type="button"`)
-  and must expose their signed amount and the selected player's name in their
-  accessible names.
+- Quick entry controls (the mocked-up refinement supersedes immediate counter
+  apply) stage one shared points draft, never a second pipeline and never new
+  state or storage: the preset set stays locked to the mockup's seven (+1, +5,
+  +10, +25, −1, −5, −10). Both the counters and the − / + stepper call one
+  `applyDraftDelta(delta)` helper that reads `#score-amount` with
+  `parseInt` (0 baseline for empty/unparseable drafts), adds the delta, clamps
+  to ±1,000,000, and writes plain integer text. A tap or step must never
+  render, paint feedback, re-rank, log a recent entry, or save; focus must
+  stay on the pressed control. Save points then applies the combined draft
+  through the unchanged `handleScoreSubmit` as exactly one ordinary change
+  (one change-log entry, one `persistActiveGameSnapshot()` save — still
+  exactly six call sites), inheriting the accepted messages, undo semantics,
+  and storage rules. Counter controls must never submit the form
+  (`type="button"`) and must expose `Add {n} point(s) to the points draft for
+  {name}` (signed amount, correct pluralization); visible `+1 … -10` labels
+  stay unchanged.
 - Leaderboard ranks are competition ranks derived at render time from player
   totals: `rank = 1 +` the number of strictly higher totals, so equal totals
   share a rank and the next position skips (12, 12, 8 → 1, 1, 3). Tied players
@@ -156,11 +155,19 @@
   `finishedAt`, no ranks. There is no un-finish: a finished game can never
   reopen for scoring, and score/undo changes never alter `game.status`.
   Confirming Finish must run through an explicit confirmation (no
-  `window.confirm`), and finishing persists through
-  `persistActiveGameSnapshot()` as the fourth successful-mutation save
-  trigger, so it obeys the storage-failure rules above: under suppression or
-  a failed write the finish still proceeds in memory, no phantom finished
-  card may appear on home, and no new failure path may be added.
+  `window.confirm`). The opener lives in the active header; opening it removes
+  the header opener and renders the unchanged confirmation below the header
+  and above the leaderboard panel inside `.active-board`, preserving
+  `data-action="open-finish"`, `confirm-finish`, `cancel-finish`,
+  `id="finish-warning"`, `data-finish-section`, the exact copy,
+  `aria-describedby="finish-warning"`, open→confirm focus, cancel→opener
+  focus, and a usable score form while open. The score panel must contain no
+  finish section, and finished views render no finish control. Finishing
+  persists through `persistActiveGameSnapshot()` as the fourth
+  successful-mutation save trigger, so it obeys the storage-failure rules
+  above: under suppression or a failed write the finish still proceeds in
+  memory, no phantom finished card may appear on home, and no new failure
+  path may be added.
 - A game with `status: "finished"` must render read-only: the full final
   standings stay visible with render-time competition ranks and unchanged
   aria-labels, but every score mutation control is absent (no Add points
@@ -169,7 +176,10 @@
   reopening a finished game from the home Finished games panel must restore
   exactly the same read-only guarantees. Finished games are listed only in
   the Finished games panel with View results controls; the Unfinished panel
-  filter stays `status === "active"`.
+  filter stays `status === "active"`. The finished layout uses the
+  `is-finished` single grid track so the standings fill the content width —
+  no empty right score-panel column — and finished rows stay inert on click
+  (no selection listener, no pointer cursor, no highlight).
 - Replaying a finished game must go through `replayGame` in `src/game.js`,
   which builds the rematch through the `createGame` roster path with
   game-scoped identities (the `replay-game` id seed, so replay ids can never
@@ -192,16 +202,21 @@
   storage, and surface through a polite feedback region instead of silent
   no-ops.
 - The podium celebration is display only and must never touch saved data: it
-  is derived at render time from `podiumRows` (every player whose competition
-  rank is ≤ 3, ties never collapsed, empty rank groups omitted, rank ≥ 4
-  players excluded from the modal but visible in the standings behind it),
-  opens only on a successful confirm-finish — including under storage failure
-  or invalid-read suppression — and never opens when a finished game is
-  merely resumed, viewed, or reloaded. Opening and dismissing must trigger no
-  write: no `persistActiveGameSnapshot()`, no `saveGames` call, no mutation
-  of `state.savedGames`, and no persisted podium/celebration fields; the
-  stored payload must stay byte-identical across open and dismiss.
-- The podium offers exactly three locked actions after the groups list, and
+  is derived at render time from `podiumRows` for the ordered steps (every
+  player whose competition rank is ≤ 3, ties never collapsed, empty rank
+  steps omitted) and from the pure `podiumRestRows` helper for a
+  ranking-order `Rest of the table` list of every rank >3 player (rank,
+  token, name, total; distinct `.podium-rest-row` classes, no focusable
+  controls). Desktop steps place rank 2 left, rank 1 center and tallest, rank
+  3 right on a common bottom baseline; at ≤600px they stack in rank order.
+  The dialog opens only on a successful confirm-finish — including under
+  storage failure or invalid-read suppression — and never opens when a
+  finished game is merely resumed, viewed, or reloaded. Opening and
+  dismissing must trigger no write: no `persistActiveGameSnapshot()`, no
+  `saveGames` call, no mutation of `state.savedGames`, and no persisted
+  podium/celebration fields; the stored payload must stay byte-identical
+  across open and dismiss.
+- The podium offers exactly three locked actions after the steps and rest list, and
   every action's visible label is its accessible name (no `aria-label`
   override): the full-width primary `podium-play-again` "Play again (same
   players, reset scores)", the `close-podium` dismiss control "Close & view
@@ -275,3 +290,20 @@
   Active Game empty state) without ever writing storage — navigation calls no
   `saveGames`, mutates no saved games, and adds no save trigger. Every nav
   action moves focus to the destination view's primary heading.
+- The Dashboard previews five games per panel (`PANEL_PREVIEW_LIMIT`) from the
+  existing `orderSavedGamesForDisplay` list. Above five, each panel renders one
+  `View all (N)` / `Show latest 5` toggle below its list with
+  `aria-expanded`, `aria-controls` pointing at that panel's stable list id, a
+  ≥44px target, and a visible label that is a substring of the accessible
+  name. The expansion state is two transient booleans (reset at every
+  Dashboard arrival); toggling re-renders and refocuses the toggle but must
+  never write storage, change `updatedAt`, or alter the persisted payload.
+  At ≤5 games there is no toggle and no wrapper. The hero must not render the
+  old "Local to this browser" pill; the retention note stays.
+- Active leaderboard rows are click-to-select: a click on any non-button part
+  of an active row runs the same selection path as its Add points control
+  (`selectedPlayerId`, cleared feedback, re-render, focus `#score-amount`).
+  The Add points button remains the keyboard control and the only
+  `aria-pressed` target; rows gain no `tabindex` or role. Finished rows are
+  inert: no listener, no pointer cursor, no selection or highlight change.
+  The `.is-selected` treatment stays byte-identical.

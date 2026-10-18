@@ -119,6 +119,10 @@ async function readActiveState(cdp) {
     podiumOpen: Boolean(document.querySelector("[data-podium-dialog]")?.open),
     focusOnHeading: Boolean(document.activeElement?.hasAttribute?.("data-active-heading")),
     focusAction: document.activeElement?.dataset?.action ?? null,
+    // refine-ui-after-testing: Finish game lives in the active header, never
+    // in the score panel.
+    finishSectionInHeader: Boolean(document.querySelector(".active-header [data-finish-section]")),
+    finishSectionInScorePanel: Boolean(document.querySelector(".score-panel [data-finish-section]")),
     horizontalOverflow: document.documentElement.scrollWidth > document.documentElement.clientWidth
   }));
 }
@@ -143,18 +147,29 @@ async function readPodiumBrief(cdp) {
 }
 
 async function readFinishPrompt(cdp) {
-  return evaluate(cdp, () => ({
-    present: Boolean(document.querySelector(".finish-prompt")),
-    title: document.querySelector(".finish-prompt-title")?.textContent?.trim() ?? null,
-    warning: document.querySelector(".finish-prompt-warning")?.textContent?.trim() ?? null,
-    describedBy: document.querySelector("[data-action='confirm-finish']")?.getAttribute("aria-describedby") ?? null,
-    openLabel: document.querySelector("[data-action='confirm-finish']")?.textContent?.trim() ?? null,
-    cancelLabel: document.querySelector("[data-action='cancel-finish']")?.textContent?.trim() ?? null,
-    focusOnConfirm: document.activeElement !== null &&
-      document.activeElement === document.querySelector("[data-action='confirm-finish']"),
-    openerGone: !document.querySelector("[data-action='open-finish']"),
-    scoreFormPresent: Boolean(document.querySelector("[data-score-form]"))
-  }));
+  return evaluate(cdp, () => {
+    const promptSection = document.querySelector(".active-board > [data-finish-section]");
+    const header = document.querySelector(".active-header");
+    const roster = document.querySelector(".roster-panel");
+
+    return {
+      present: Boolean(document.querySelector(".finish-prompt")),
+      title: document.querySelector(".finish-prompt-title")?.textContent?.trim() ?? null,
+      warning: document.querySelector(".finish-prompt-warning")?.textContent?.trim() ?? null,
+      describedBy: document.querySelector("[data-action='confirm-finish']")?.getAttribute("aria-describedby") ?? null,
+      openLabel: document.querySelector("[data-action='confirm-finish']")?.textContent?.trim() ?? null,
+      cancelLabel: document.querySelector("[data-action='cancel-finish']")?.textContent?.trim() ?? null,
+      focusOnConfirm: document.activeElement !== null &&
+        document.activeElement === document.querySelector("[data-action='confirm-finish']"),
+      openerGone: !document.querySelector("[data-action='open-finish']"),
+      scoreFormPresent: Boolean(document.querySelector("[data-score-form]")),
+      promptBelowHeader: Boolean(header && promptSection &&
+        (header.compareDocumentPosition(promptSection) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      promptAboveLeaderboard: Boolean(promptSection && roster &&
+        (promptSection.compareDocumentPosition(roster) & Node.DOCUMENT_POSITION_FOLLOWING)),
+      promptInScorePanel: Boolean(document.querySelector(".score-panel [data-finish-section]"))
+    };
+  });
 }
 
 async function pressEnter(cdp) {
@@ -284,7 +299,9 @@ async function runMainFlow(cdp, { consoleProblems }) {
   const activeBefore = await readActiveState(cdp);
   assert.equal(activeBefore.eyebrow, "In progress");
   assert.deepEqual(activeBefore.totals, ["10", "5", "0"]);
-  assert.equal(activeBefore.finishSectionPresent, true, "the active score panel must offer the Finish game action");
+  assert.equal(activeBefore.finishSectionPresent, true, "the active view must offer the Finish game action");
+  assert.equal(activeBefore.finishSectionInHeader, true, "the Finish game opener lives in the active header");
+  assert.equal(activeBefore.finishSectionInScorePanel, false, "the score panel no longer carries a finish section");
   const openerHeight = await evaluate(cdp, () =>
     document.querySelector("[data-action='open-finish']")?.getBoundingClientRect().height ?? 0);
   assert.ok(openerHeight >= 44, "the Finish game opener needs a roughly 44px target");
@@ -304,6 +321,9 @@ async function runMainFlow(cdp, { consoleProblems }) {
   assert.equal(prompt.focusOnConfirm, true, "opening the prompt must move focus to the confirm button");
   assert.equal(prompt.openerGone, true, "the opener must swap to the prompt");
   assert.equal(prompt.scoreFormPresent, true, "the score form stays available while the prompt is open");
+  assert.equal(prompt.promptBelowHeader, true, "the prompt renders below the active header");
+  assert.equal(prompt.promptAboveLeaderboard, true, "the prompt renders above the leaderboard panel");
+  assert.equal(prompt.promptInScorePanel, false, "the score panel must not host the finish prompt");
   const promptScreenshot = await screenshot(cdp, path.join(evidenceDir, "desktop-finish-prompt.png"));
 
   await click(cdp, "[data-action='cancel-finish']");
@@ -689,7 +709,7 @@ async function main() {
       setupSource: `localStorage.setItem(${JSON.stringify(STORAGE_KEY)}, "not-json{");`
     });
 
-    console.log("Browser finish-game test passed: cancel keeps scoring and undo fully working with unchanged payload, confirming locks read-only final standings (Finished eyebrow, role=status note, zero Add points/aria-pressed/score panel/undo), opens the dismissible podium dialog focused on its Close button, and after dismissal returns focus to the heading with unchanged standings, the stored game carries status finished with no new fields, the game moves to the Finished games panel with View results reopening read-only (never re-celebrating) and identical ranks/totals after reloads while other games stay untouched, finishing under blocked writes and invalid-read suppression stays in-memory and honest with byte-identical payloads and code-only warnings (podium included and dismissed before navigation), and 320px/keyboard/focus checks pass with the podium opened and dismissed via a real Escape key, no horizontal overflow, and no uncaught console errors.");
+    console.log("Browser finish-game test passed: the Finish game opener lives in the active header and the unchanged confirmation renders below the header and above the leaderboard panel (the score panel carries no finish section); cancel keeps scoring and undo fully working with unchanged payload, confirming locks read-only final standings (Finished eyebrow, role=status note, zero Add points/aria-pressed/score panel/undo), opens the dismissible podium dialog focused on its Close button, and after dismissal returns focus to the heading with unchanged standings, the stored game carries status finished with no new fields, the game moves to the Finished games panel with View results reopening read-only (never re-celebrating) and identical ranks/totals after reloads while other games stay untouched, finishing under blocked writes and invalid-read suppression stays in-memory and honest with byte-identical payloads and code-only warnings (podium included and dismissed before navigation), and 320px/keyboard/focus checks pass with the podium opened and dismissed via a real Escape key, no horizontal overflow, and no uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       mainScreenshots.promptScreenshot,
       mainScreenshots.podiumScreenshot,

@@ -93,6 +93,9 @@ node --check scripts/browser-score-distribution-test.mjs
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-podium-actions-test.mjs'
 node --check scripts/browser-podium-actions-test.mjs
 
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-refine-ui-test.mjs'
+node --check scripts/browser-refine-ui-test.mjs
+
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-test-utils.mjs'
 node --check scripts/browser-test-utils.mjs
 

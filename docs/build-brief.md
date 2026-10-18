@@ -27,7 +27,7 @@ Visual refresh: cool-tinted card surfaces over the warm ivory canvas, Plus Jakar
 Behavioral additions, chosen because they are cheap and fit the existing data:
 
 - **Game titles**: optional title set during setup, editable while the game is in progress, frozen when finished. Blank titles display an auto date-based label.
-- **Quick tap counters**: preset signed amounts (+1, +5, +10, +25, −1, −5, −10) alongside the signed stepper and custom input. Each is an ordinary score change; undo semantics are unchanged.
+- **Quick tap counters**: preset signed amounts (+1, +5, +10, +25, −1, −5, −10) alongside the signed stepper and custom input. Counters and the stepper stage the same pending draft; Save points applies the combined draft as one ordinary score change, and undo semantics are unchanged.
 - **Recent entries**: show the active game's score-change log newest first with relative timestamps, including the latest entry's effect for undo context.
 - **Player numbers**: numbered badges in setup order so repeated colors or names stay distinguishable.
 - **Finished-game cards**: show the winner (rank 1, handling ties) and top score; ongoing cards show player count and last-activity recency.
@@ -35,6 +35,7 @@ Behavioral additions, chosen because they are cheap and fit the existing data:
 - **Score distribution**: a stacked bar of each player's share of total points under the leaderboard.
 - **Empty states**: purposeful empty states for ongoing and finished panels, and for the Active Game destination when nothing is in progress.
 - **Podium actions**: Play again, Close & view full standings, and Save & exit to Dashboard.
+- **Podium steps and rest list**: ordered rank-2/rank-1/rank-3 steps with a taller center, ties preserved, missing ranks omitted, and a ranking-order "Rest of the table" list for every player ranked above 3.
 
 ## Technical direction
 

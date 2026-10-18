@@ -20,7 +20,7 @@ import {
   recentScoreChanges,
   undoLastScoreChange
 } from "./score.js";
-import { podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
+import { podiumRestRows, podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
 import { finishGame, displayGameTitle, formatRelativeTimestamp, renameGame, replayGame } from "./game.js";
 import {
   loadSavedGames,
@@ -44,6 +44,8 @@ const state = {
   titleEditOpen: false,
   titleDraft: "",
   titleEditFeedback: null,
+  showAllActiveGames: false,
+  showAllFinishedGames: false,
   savedGames: [],
   storageReadError: null,
   storageDroppedCount: 0,
@@ -53,9 +55,15 @@ const state = {
   nextRowNumber: MIN_PLAYERS + 1
 };
 
+// Dashboard preview cap (refine-ui-after-testing): each panel renders at most
+// this many of its most recent saved games until the transient per-panel
+// toggle expands it. The full list stays in the persisted payload untouched.
+const PANEL_PREVIEW_LIMIT = 5;
+
 // Quick tap presets (add-quick-score-entry): the mockup's seven signed
-// amounts, locked as a local constant. Each tap applies immediately through
-// the ordinary score-save path — no new state, storage fields, or save trigger.
+// amounts, locked as a local constant. Each tap stages the points draft
+// (refine-ui-after-testing superseded immediate apply); Save points applies
+// the combined draft as one ordinary score change.
 const QUICK_SCORE_PRESETS = [1, 5, 10, 25, -1, -5, -10];
 
 const SCORE_ERROR_MESSAGES = {
@@ -137,6 +145,8 @@ function handleNavDashboard() {
   state.view = "home";
   state.errors = [];
   state.limitMessage = "";
+  state.showAllActiveGames = false;
+  state.showAllFinishedGames = false;
   render();
   appRoot.querySelector("[data-home-heading]")?.focus();
 }
@@ -225,7 +235,6 @@ function renderHome() {
       </div>
       <div class="hero-actions" aria-label="Game actions">
         <button type="button" class="primary-action" data-action="new-game">New game</button>
-        <span class="status-pill">Local to this browser</span>
       </div>
     </section>
 
@@ -240,7 +249,16 @@ function renderHome() {
         </div>
         ${renderStorageNotice()}
         ${renderDroppedEntriesNote()}
-        ${activeGames.length > 0 ? renderSavedGameList(activeGames) : `
+        ${activeGames.length > 0 ? `
+        ${renderSavedGameList(activeGames.slice(0, state.showAllActiveGames ? activeGames.length : PANEL_PREVIEW_LIMIT), "unfinished-game-list")}
+        ${renderPanelToggle({
+          action: "toggle-unfinished-games",
+          listId: "unfinished-game-list",
+          total: activeGames.length,
+          expanded: state.showAllActiveGames,
+          noun: "unfinished games"
+        })}
+        ` : `
         <div class="empty-state">
           ${suppressionActive ? `
           <p class="empty-title">Saved games can't be shown right now.</p>
@@ -265,7 +283,16 @@ function renderHome() {
             <h2 id="finished-title">Finished games</h2>
           </div>
         </div>
-        ${finishedGames.length > 0 ? renderFinishedGameList(finishedGames) : `
+        ${finishedGames.length > 0 ? `
+        ${renderFinishedGameList(finishedGames.slice(0, state.showAllFinishedGames ? finishedGames.length : PANEL_PREVIEW_LIMIT))}
+        ${renderPanelToggle({
+          action: "toggle-finished-games",
+          listId: "finished-game-list",
+          total: finishedGames.length,
+          expanded: state.showAllFinishedGames,
+          noun: "finished games"
+        })}
+        ` : `
         <div class="empty-state">
           <p class="empty-title">No finished games yet.</p>
           <p>Finish a game and its standings will appear here.</p>
@@ -291,6 +318,21 @@ function renderHome() {
     button.addEventListener("click", () => {
       handleResume(button.dataset.gameId);
     });
+  });
+
+  // Per-panel disclosure (refine-ui-after-testing): transient only — flipping
+  // the boolean re-renders the home view (never writes storage) and focus
+  // returns to the freshly rendered toggle.
+  appRoot.querySelector("[data-action='toggle-unfinished-games']")?.addEventListener("click", () => {
+    state.showAllActiveGames = !state.showAllActiveGames;
+    render();
+    appRoot.querySelector("[data-action='toggle-unfinished-games']")?.focus();
+  });
+
+  appRoot.querySelector("[data-action='toggle-finished-games']")?.addEventListener("click", () => {
+    state.showAllFinishedGames = !state.showAllFinishedGames;
+    render();
+    appRoot.querySelector("[data-action='toggle-finished-games']")?.focus();
   });
 }
 
@@ -353,11 +395,29 @@ function paintStorageNotice() {
   region.append(message);
 }
 
-function renderSavedGameList(games) {
+function renderSavedGameList(games, listId) {
   return `
-    <ol class="saved-game-list" aria-label="Saved games">
+    <ol id="${listId}" class="saved-game-list" aria-label="Saved games">
       ${games.map((game) => renderSavedGameCard(game)).join("")}
     </ol>
+  `;
+}
+
+// Per-panel "View all (N)" / "Show latest 5" disclosure. It renders only when
+// the panel holds more than the preview cap; the visible text is a substring
+// of the accessible name, and aria-controls points at the panel's own list.
+function renderPanelToggle({ action, listId, total, expanded, noun }) {
+  if (total <= PANEL_PREVIEW_LIMIT) {
+    return "";
+  }
+
+  const label = expanded ? "Show latest 5" : `View all (${total})`;
+  const accessibleName = expanded ? `Show latest 5 ${noun}` : `View all (${total}) ${noun}`;
+
+  return `
+    <div class="panel-toggle-row">
+      <button type="button" class="secondary-action panel-toggle" data-action="${action}" aria-expanded="${expanded ? "true" : "false"}" aria-controls="${listId}" aria-label="${accessibleName}">${label}</button>
+    </div>
   `;
 }
 
@@ -388,7 +448,7 @@ function renderSavedGameCard(game) {
 
 function renderFinishedGameList(games) {
   return `
-    <ol class="saved-game-list" aria-label="Finished games">
+    <ol id="finished-game-list" class="saved-game-list" aria-label="Finished games">
       ${games.map((game) => renderFinishedGameCard(game)).join("")}
     </ol>
   `;
@@ -452,6 +512,8 @@ function handleResume(gameId) {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
+  state.showAllActiveGames = false;
+  state.showAllFinishedGames = false;
   state.view = "active";
   render();
   appRoot.querySelector("[data-active-heading]")?.focus();
@@ -677,7 +739,10 @@ function renderActiveGame() {
           <button type="button" class="title-edit-action" data-action="open-title-edit">Edit title</button>
           `}
           <span class="status-pill">${game.players.length} players</span>
+          ${state.finishPromptOpen ? "" : renderFinishOpener()}
         </div>
+
+        ${state.finishPromptOpen ? renderFinishPrompt() : ""}
 
         <div class="panel roster-panel">
           <div class="panel-heading">
@@ -707,7 +772,6 @@ function renderActiveGame() {
         </div>
         ${selectedPlayer ? renderScoreForm(selectedPlayer, numbers.get(selectedPlayer.id)) : ""}
         ${renderRecentEntries(game)}
-        ${renderFinishSection()}
       </aside>
     </section>
   `;
@@ -825,25 +889,30 @@ function renderActiveEmpty() {
   });
 }
 
-function renderFinishSection() {
-  if (state.finishPromptOpen) {
-    return `
-      <div class="finish-section" data-finish-section>
-        <div class="finish-prompt">
-          <p class="finish-prompt-title">Finish this game?</p>
-          <p id="finish-warning" class="finish-prompt-warning">Finished games can't be reopened for scoring. Final standings stay saved in this browser.</p>
-          <div class="finish-prompt-actions">
-            <button type="button" class="finish-action" data-action="confirm-finish" aria-describedby="finish-warning">Finish game</button>
-            <button type="button" class="secondary-action" data-action="cancel-finish">Cancel</button>
-          </div>
-        </div>
-      </div>
-    `;
-  }
+// Finish game moved into the active header (refine-ui-after-testing): the
+// opener sits in the header's final slot, and the unchanged confirmation
+// renders below the header and above the leaderboard panel inside
+// .active-board. Hooks, ids, copy, focus moves, and the confirm flow are
+// preserved byte-for-byte.
+function renderFinishOpener() {
+  return `
+    <div class="finish-opener" data-finish-section>
+      <button type="button" class="finish-action" data-action="open-finish">Finish game</button>
+    </div>
+  `;
+}
 
+function renderFinishPrompt() {
   return `
     <div class="finish-section" data-finish-section>
-      <button type="button" class="finish-action" data-action="open-finish">Finish game</button>
+      <div class="finish-prompt">
+        <p class="finish-prompt-title">Finish this game?</p>
+        <p id="finish-warning" class="finish-prompt-warning">Finished games can't be reopened for scoring. Final standings stay saved in this browser.</p>
+        <div class="finish-prompt-actions">
+          <button type="button" class="finish-action" data-action="confirm-finish" aria-describedby="finish-warning">Finish game</button>
+          <button type="button" class="secondary-action" data-action="cancel-finish">Cancel</button>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -856,7 +925,7 @@ function renderFinishedGame(game) {
   const numbers = playerNumbers(game);
 
   appRoot.innerHTML = `
-    <section class="active-layout" aria-labelledby="active-title">
+    <section class="active-layout is-finished" aria-labelledby="active-title">
       <div class="active-board">
         <div class="active-header">
           <button type="button" class="ghost-action" data-action="back-home">All games</button>
@@ -911,7 +980,7 @@ function renderPodiumDialog(podium, game) {
       }
 
       return `
-        <li class="podium-group${rank === 1 ? " is-rank-one" : ""}">
+        <li class="podium-group podium-step${rank === 1 ? " is-rank-one" : ""}" data-rank="${rank}">
           <h3 class="podium-rank-heading">Rank ${rank}</h3>
           <ul class="podium-players">
             ${rows.map((row) => renderPodiumPlayer(row.player, row.rank, numbers.get(row.player.id))).join("")}
@@ -920,6 +989,18 @@ function renderPodiumDialog(podium, game) {
       `;
     })
     .join("");
+  // Ranks above 3 belong in the "Rest of the table" list below the steps
+  // (refine-ui-after-testing): ranking order, distinct row classes, no
+  // focusable controls, and no section at all when everyone ranks ≤3.
+  const restRows = podiumRestRows(game);
+  const rest = restRows.length > 0 ? `
+        <section class="podium-rest" aria-labelledby="podium-rest-title">
+          <h3 id="podium-rest-title" class="podium-rest-title">Rest of the table</h3>
+          <ul class="podium-rest-list">
+            ${restRows.map((row) => renderPodiumRestRow(row, numbers.get(row.player.id))).join("")}
+          </ul>
+        </section>
+  ` : "";
 
   return `
     <dialog class="podium-dialog" data-podium-dialog aria-labelledby="podium-title" aria-describedby="podium-lede">
@@ -928,7 +1009,7 @@ function renderPodiumDialog(podium, game) {
         <p class="podium-game-title">${escapeHtml(displayGameTitle(game))}</p>
         <h2 id="podium-title" class="podium-title">Final podium</h2>
         <p id="podium-lede" class="podium-lede">Congratulations to the top of the table.</p>
-        <ol class="podium-groups" aria-label="Podium players">${groups}</ol>
+        <ol class="podium-groups" aria-label="Podium steps">${groups}</ol>${rest}
         <div class="podium-actions">
           <button type="button" class="primary-action podium-play-again" data-action="podium-play-again">Play again (same players, reset scores)</button>
           <div class="podium-actions-row">
@@ -950,6 +1031,19 @@ function renderPodiumPlayer(player, rank, playerNumber) {
       <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
       <span class="podium-player-name">${escapeHtml(player.name)}</span>
       <span class="podium-player-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
+    </li>
+  `;
+}
+
+function renderPodiumRestRow({ player, rank }, playerNumber) {
+  const color = getColor(player.color);
+
+  return `
+    <li class="podium-rest-row">
+      <span class="podium-rest-rank">${rank}</span>
+      <span class="player-token ${color.cssClass}" aria-label="Player ${playerNumber}, ${color.label}">${playerNumber}</span>
+      <span class="podium-rest-name">${escapeHtml(player.name)}</span>
+      <span class="podium-rest-total" aria-label="${escapeAttribute(player.name)}: rank ${rank}, total ${player.total}">${String(player.total)}</span>
     </li>
   `;
 }
@@ -1081,6 +1175,8 @@ function handlePodiumExitDashboard() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
+  state.showAllActiveGames = false;
+  state.showAllFinishedGames = false;
   render();
   appRoot.querySelector("[data-home-heading]")?.focus();
 }
@@ -1165,12 +1261,14 @@ function renderQuickScores(player) {
 
 function renderQuickScoreButton(amount, player) {
   // Accessible name carries the signed amount with correct pluralization for
-  // |n| = 1 ("Add -1 point to Alex"); the visible label keeps the ASCII sign.
+  // |n| = 1 ("Add -1 point to the points draft for Alex") and says "draft"
+  // (refine-ui-after-testing superseded immediate apply). The visible label
+  // keeps the ASCII sign.
   const pointsWord = Math.abs(amount) === 1 ? "point" : "points";
   const visibleLabel = amount > 0 ? `+${amount}` : `-${Math.abs(amount)}`;
 
   return `
-    <button type="button" class="quick-score-action${amount < 0 ? " is-negative" : ""}" data-action="apply-quick-score" data-amount="${amount}" aria-label="Add ${amount} ${pointsWord} to ${escapeAttribute(player.name)}">${visibleLabel}</button>
+    <button type="button" class="quick-score-action${amount < 0 ? " is-negative" : ""}" data-action="apply-quick-score" data-amount="${amount}" aria-label="Add ${amount} ${pointsWord} to the points draft for ${escapeAttribute(player.name)}">${visibleLabel}</button>
   `;
 }
 
@@ -1183,8 +1281,8 @@ function renderScoreFeedback() {
 }
 
 // Recent entries panel (track-game-activity): a display-only view over the
-// stored change sequence, rendered inside the active view's score panel
-// between the score form and the finish section. Newest first, capped by
+// stored change sequence, rendered as the active view score panel's last
+// block (Finish game now lives in the active header). Newest first, capped by
 // recentScoreChanges, with the `Last: {name} {signedAmount}` header as undo
 // context. There are no interactive controls and no live region of its own —
 // #score-feedback already announces saves and undoes. Undo derives for free:
@@ -1262,6 +1360,15 @@ function scoreFeedbackClassName(kind) {
   return SCORE_FEEDBACK_CLASS_NAMES[kind] ?? SCORE_FEEDBACK_CLASS_NAMES.success;
 }
 
+// One selection path for the row click and the Add points button: unchanged
+// selectedPlayerId/scoreFeedback/render/focus semantics.
+function selectPlayer(playerId) {
+  state.selectedPlayerId = playerId;
+  state.scoreFeedback = null;
+  render();
+  appRoot.querySelector("#score-amount")?.focus();
+}
+
 function bindActiveEvents() {
   appRoot.querySelector("[data-action='back-home']")?.addEventListener("click", () => {
     state.view = "home";
@@ -1273,6 +1380,8 @@ function bindActiveEvents() {
     state.titleEditOpen = false;
     state.titleDraft = "";
     state.titleEditFeedback = null;
+    state.showAllActiveGames = false;
+    state.showAllFinishedGames = false;
     render();
     appRoot.querySelector("[data-action='new-game']")?.focus();
   });
@@ -1310,10 +1419,25 @@ function bindActiveEvents() {
         return;
       }
 
-      state.selectedPlayerId = row.dataset.playerId;
-      state.scoreFeedback = null;
-      render();
-      appRoot.querySelector("#score-amount")?.focus();
+      selectPlayer(row.dataset.playerId);
+    });
+  });
+
+  // Whole-row selection (refine-ui-after-testing): clicking anywhere in an
+  // active leaderboard row away from a button runs the same selection path as
+  // the Add points control. The button stays the keyboard/aria-pressed target;
+  // finished rows carry no Add points button and are never bound.
+  appRoot.querySelectorAll(".active-player[data-player-id]").forEach((row) => {
+    if (!row.querySelector(".add-points-action")) {
+      return;
+    }
+
+    row.addEventListener("click", (event) => {
+      if (event.target.closest("button")) {
+        return;
+      }
+
+      selectPlayer(row.dataset.playerId);
     });
   });
 
@@ -1447,6 +1571,8 @@ function handlePlayAgain() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
+  state.showAllActiveGames = false;
+  state.showAllFinishedGames = false;
   persistActiveGameSnapshot();
   render();
   paintStorageNotice();
@@ -1505,9 +1631,9 @@ function handleTitleSave() {
   appRoot.querySelector("[data-active-heading]")?.focus();
 }
 
-// The returned boolean exists so quick counters (add-quick-score-entry) can
-// share this exact path: true on success, false on every early rejection.
-// The typed-save focus contract is untouched.
+// Save points applies the pending draft through the unchanged path. The
+// returned boolean reports success/failure for callers that need it; the
+// typed-save focus contract is untouched.
 function handleScoreSubmit() {
   const input = appRoot.querySelector("#score-amount");
 
@@ -1549,33 +1675,20 @@ function handleScoreSubmit() {
   return true;
 }
 
-// Quick counter tap (add-quick-score-entry): one intent per control. The
-// preset overwrites any typed draft (never summed) and the apply rides the
-// unchanged save path — parse gate, persistActiveGameSnapshot (still six call
-// sites), exact accepted messages, undo, and recent-entries derivation. On
-// success focus returns to the pressed counter (matched by action + amount)
-// so repeated Enter keeps tapping it; rejections keep the accepted input focus.
+// Quick counter tap (refine-ui-after-testing superseded immediate apply): the
+// preset adds to the pending points draft exactly like the stepper. Nothing
+// renders, paints feedback, re-ranks, or saves, so focus stays on the pressed
+// counter and repeated Enter keeps accumulating. Save points applies the
+// combined draft as one ordinary score change through handleScoreSubmit.
 function handleQuickScore(amount) {
-  const input = appRoot.querySelector("#score-amount");
-
-  if (!input) {
-    return;
-  }
-
-  input.value = String(amount);
-  const saved = handleScoreSubmit();
-
-  if (saved) {
-    appRoot.querySelector(`[data-action='apply-quick-score'][data-amount='${amount}']`)?.focus();
-  }
+  applyDraftDelta(amount);
 }
 
-// Stepper nudge (add-quick-score-entry): a pure draft edit on #score-amount.
-// The numeric reading of the trimmed draft starts from 0 when empty or
-// unparseable (a lone sign), the result is plain integer text clamped to
-// ±MAX_SCORE_ABS, and nothing else happens — no render, no feedback, no save,
-// so storage stays byte-identical across any number of steps.
-function stepScoreDraft(direction) {
+// Shared draft helper for the stepper and the quick counters: read the
+// trimmed draft with parseInt, start from 0 for empty/unparseable text, add
+// the delta, clamp to ±MAX_SCORE_ABS, and write plain integer text. It never
+// renders, paints feedback, or saves.
+function applyDraftDelta(delta) {
   const input = appRoot.querySelector("#score-amount");
 
   if (!input) {
@@ -1584,9 +1697,12 @@ function stepScoreDraft(direction) {
 
   const parsed = Number.parseInt(String(input.value).trim(), 10);
   const baseline = Number.isFinite(parsed) ? parsed : 0;
-  const stepped = baseline + direction;
-  const clamped = Math.max(-MAX_SCORE_ABS, Math.min(MAX_SCORE_ABS, stepped));
-  input.value = String(clamped);
+  const next = Math.max(-MAX_SCORE_ABS, Math.min(MAX_SCORE_ABS, baseline + delta));
+  input.value = String(next);
+}
+
+function stepScoreDraft(direction) {
+  applyDraftDelta(direction);
 }
 
 function handleUndo() {
@@ -1726,6 +1842,8 @@ function resetSetup() {
   state.titleEditOpen = false;
   state.titleDraft = "";
   state.titleEditFeedback = null;
+  state.showAllActiveGames = false;
+  state.showAllFinishedGames = false;
   state.errors = [];
   state.limitMessage = "";
   state.nextRowNumber = MIN_PLAYERS + 1;
