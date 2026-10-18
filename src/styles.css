@@ -1288,9 +1288,31 @@ h3 {
   text-align: right;
 }
 
-.podium-close {
-  width: 100%;
+/* Podium actions (extend-podium-actions): the primary replay control spans
+   the full width above a side-by-side row of the two secondary exits. Labels
+   wrap so the longer copy never forces the dialog wider at any viewport. */
+.podium-actions {
+  display: grid;
+  gap: 10px;
   margin-top: var(--space-md);
+}
+
+.podium-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.podium-actions .primary-action,
+.podium-actions .secondary-action {
+  min-width: 0;
+  white-space: normal;
+}
+
+@media (max-width: 480px) {
+  .podium-actions-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 360px) {

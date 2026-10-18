@@ -160,16 +160,28 @@ decorative `aria-hidden` confetti layer of 14 deterministic pieces animated
 by one CSS `@keyframes` rule (single iteration, ends invisible) that a
 `prefers-reduced-motion: reduce` rule suppresses with `display: none`. The
 dialog is labelled (`aria-labelledby`) and described (`aria-describedby`),
-opens with focus on its Close button, and dismisses through the Close button,
-Escape (native `cancel`, prevented and routed through the shared path), or a
-backdrop click (`event.target === dialog`) — all funneling into one
-idempotent cleanup that clears the flag, re-renders the finished view without
-the dialog, and returns focus to the game heading. Because Chrome dispatches
-the dialog `close` event as a queued task that can be delayed (and starved on
-hidden pages), dismissal cleanup does not depend on that event alone; the
-`close` listener remains as the idempotent fallback. The celebration writes
-nothing: opening and dismissing trigger no save, and the stored payload stays
-byte-identical.
+opens with focus on its dismiss control, and dismisses through that control
+("Close & view full standings", `close-podium`), Escape (native `cancel`,
+prevented and routed through the shared path), or a backdrop click
+(`event.target === dialog`) — all funneling into one idempotent cleanup that
+clears the flag, re-renders the finished view without the dialog, and returns
+focus to the game heading. Because Chrome dispatches the dialog `close` event
+as a queued task that can be delayed (and starved on hidden pages), dismissal
+cleanup does not depend on that event alone; the `close` listener remains as
+the idempotent fallback that ignores events delivered for a detached dialog.
+Since `extend-podium-actions` the podium body ends in a three-action block
+(`.podium-actions`): the full-width primary **Play again (same players, reset
+scores)** (`podium-play-again`) above a `.podium-actions-row` grid of the two
+secondary exits — the unchanged `close-podium` hook and `podium-exit-dashboard`
+— which stack full width at ≤480px. The primary's wrapper guards on
+`state.podiumOpen`, closes the live dialog, and delegates to the unchanged
+`handlePlayAgain()` (its queued `close` event is ignored by the detached-dialog
+guard once the replay re-render replaces the dialog — the Scenario 6
+two-podium stale-close protection). `handlePodiumExitDashboard()` mirrors the
+accepted active-view back-home reset verbatim and lands focus on
+`[data-home-heading]`; it is pure navigation and never writes. The celebration
+writes nothing: opening, dismissing, and exiting trigger no save, and the
+stored payload stays byte-identical.
 
 The top navigation is the app's display/state-only shell layer. `index.html`
 renders a static app bar on every screen — brand block (marker dots, "Game
@@ -219,8 +231,8 @@ persistence slice is implemented.
 - `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
   smoke checks, and Chrome browser interaction checks for the roster, scoring,
   leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, game-title, game-activity, quick-score, player-number, and
-  score-distribution flows.
+  design-system, game-title, game-activity, quick-score, player-number,
+  score-distribution, and podium-actions flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -246,7 +258,10 @@ persistence slice is implemented.
    render and threads the numbers into its row/card renderers), and the
    score-distribution block (the active leaderboard derives
    `scoreDistribution(game)` once per render and emits the caption, bar, and
-   legend after the standings rows).
+   legend after the standings rows), and the three podium exit actions
+   (`podium-play-again` delegating to the unchanged `handlePlayAgain` after a
+   guarded `dialog.close()`, the unchanged `close-podium` dismiss funnel, and
+   `handlePodiumExitDashboard()` as a write-free back-home navigation).
 - `src/roster.js`: roster limits, colors, validation, identities, and
   zero-score game creation with the trimmed optional title (`""` when blank
   or non-string) and the `MAX_TITLE_LENGTH` cap, plus the `playerNumbers`
@@ -316,11 +331,26 @@ persistence slice is implemented.
   isolated headless Chrome.
 - `scripts/browser-podium-test.mjs`: desktop/mobile podium celebration checks —
   tie eligibility (1,1,3 and 20 tied players in one scrolling group), rank-4
-  exclusion, the Close/Escape/backdrop/Space/Enter dismissal paths with focus
+  exclusion, the Close/Escape/backdrop/Space dismissal paths with focus
   return and no re-celebration on reopen, byte-identical payloads across
   open/dismiss including under blocked writes and invalid-read suppression,
   reduced-motion confetti suppression via emulated media, and 320px overflow,
-  target, and keyboard checks — using isolated headless Chrome.
+  target, and keyboard checks (the Tab walk updated by extend-podium-actions
+  for the three focusable actions) — using isolated headless Chrome.
+- `scripts/browser-podium-actions-test.mjs`: desktop/mobile podium exit-action
+  checks — the three-action contract (exact labels as accessible names,
+  `type="button"`, DOM order, full-width primary over a side-by-side
+  secondary row that stacks at 320px, ≥44px targets, initial focus on the
+  dismiss control, frozen copy/tokens/confetti, byte-identical payload while
+  open); the close hook (click, Enter, Escape, real backdrop click, Space)
+  landing on the read-only standings with heading focus and byte-identical
+  storage; Save & exit as pure navigation (home heading focus, `aria-current`
+  Dashboard, Finished-games listing, write-absence byte-identity, no phantom
+  cards, no re-celebration on reopen, 320px Tab+Enter real-key walk); podium
+  Play again delegating to the unchanged replay flow (untitled zero-score
+  `replay-game-*` entry, byte-identical original across replay and scoring,
+  reload listing separation) plus the two-podium stale-close guard; zero
+  uncaught console errors — using isolated headless Chrome.
 - `scripts/browser-play-again-test.mjs`: desktop/mobile replay checks — the
   full MVP loop through replay with presentation-only copying and zero
   totals/no undo history, separate stored games with distinct

@@ -201,6 +201,22 @@
   write: no `persistActiveGameSnapshot()`, no `saveGames` call, no mutation
   of `state.savedGames`, and no persisted podium/celebration fields; the
   stored payload must stay byte-identical across open and dismiss.
+- The podium offers exactly three locked actions after the groups list, and
+  every action's visible label is its accessible name (no `aria-label`
+  override): the full-width primary `podium-play-again` "Play again (same
+  players, reset scores)", the `close-podium` dismiss control "Close & view
+  full standings" (kept as the dismissal hook), and `podium-exit-dashboard`
+  "Save & exit to Dashboard"; all are `type="button"`, the two secondaries
+  share one side-by-side row that stacks full width at ≤480px, every target
+  is ≥44px, and opening the podium always focuses the dismiss control. The
+  dismiss control, Escape, and backdrop clicks always land on the read-only
+  standings with focus on the game heading. "Save & exit to Dashboard" is
+  navigation only — it mirrors the accepted back-home reset and focuses the
+  Dashboard heading without ever writing storage — and the podium replay
+  action must delegate to the unchanged `handlePlayAgain` (guarded close,
+  then replay; the detached-dialog `close` guard keeps a queued close from a
+  dismissed podium from clobbering a later one); no podium action may add a
+  save trigger or persist a new field.
 - Modal dialogs must dismiss reliably without depending on the queued dialog
   `close` event alone: Chrome dispatches `close` asynchronously and can delay
   or starve it on hidden pages, so dismissal paths (Close control, Escape's
