@@ -455,6 +455,10 @@ async function runDesktopFullFlow(cdp, { consoleProblems }) {
   // Superseded by name-game-titles: the stored replay title is the empty
   // string — the label is render-time only and never stored.
   assert.equal(replayEntry.title, "");
+  // Superseded by game-presets: this suite's source game is Custom, so the
+  // replay omits presetId (preset replay coverage lives in the new suite).
+  assert.equal("presetId" in replayEntry, false, "a Custom replay must omit presetId");
+  assert.equal("presetId" in parsedBefore.games[0], false, "a Custom original never stores presetId");
   assert.ok(!("changes" in replayEntry), "the stored replay must not carry a change log");
   assert.ok(replayEntry.players.every((player) => player.total === 0));
   assert.deepEqual(
@@ -823,7 +827,7 @@ async function main() {
 
     const mobile = await runSession("mobile-full-flow", runMobileFullFlow);
 
-    console.log("Browser play-again test passed: the full MVP loop (create, signed scoring, undo, finish, podium, Play again) works at 1280x800 and 320x720 with the replay opening as a scorable active game that starts untitled (stored title \"\", superseded by name-game-titles) and displays the deterministic auto date-based label on the heading, cards, and accessible names while copying the names, colors, and markers literally with every total restarting at zero at shared rank 1 and no undo history ('Nothing to undo yet.'); the replay is a separate game with distinct replay-game-* ids whose stored entry has its own updatedAt and no change log, while the finished original's stored entry stays byte-identical across replay and replay-game scoring and home lists both games independently after reload; reopening a finished game never re-celebrates and repeated replays create distinct games (1 unfinished + 2 finished listed exactly once each); a corrupted stored roster is refused with the polite 'This game's saved players can't be replayed.' live-region message and byte-identical storage; and under blocked writes the replay, scoring, and undo keep working in memory with the accepted role=status write notice, code-only 'Game save failed: write'/'Game replay failed: invalid-roster' warnings, no phantom cards, and no uncaught console errors.");
+    console.log("Browser play-again test passed: the full MVP loop (create, signed scoring, undo, finish, podium, Play again) works at 1280x800 and 320x720 with the replay opening as a scorable active game that starts untitled (stored title \"\", superseded by name-game-titles) and displays the deterministic auto date-based label on the heading, cards, and accessible names while copying the names, colors, and markers literally with every total restarting at zero at shared rank 1 and no undo history ('Nothing to undo yet.'); the replay is a separate game with distinct replay-game-* ids whose stored entry has its own updatedAt, no change log, and no presetId for this Custom source (preset replay coverage lives in the presets suite), while the finished original's stored entry stays byte-identical across replay and replay-game scoring and home lists both games independently after reload; reopening a finished game never re-celebrates and repeated replays create distinct games (1 unfinished + 2 finished listed exactly once each); a corrupted stored roster is refused with the polite 'This game's saved players can't be replayed.' live-region message and byte-identical storage; and under blocked writes the replay, scoring, and undo keep working in memory with the accepted role=status write notice, code-only 'Game save failed: write'/'Game replay failed: invalid-roster' warnings, no phantom cards, and no uncaught console errors.");
     console.log(`Browser evidence screenshots: ${[
       desktop.replayScreenshot,
       desktop.homeScreenshot,

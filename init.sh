@@ -5,7 +5,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$repo_root"
 printf 'Repository: %s\n' "$repo_root"
 
-for required in AGENTS.md PROGRESS.md feature_list.json CONTEXT.md docs/build-brief.md docs/domain-model.md docs/risks-and-open-questions.md DESIGN.md index.html src/main.js src/roster.js src/score.js src/standings.js src/storage.js src/game.js src/styles.css package.json scripts/smoke.mjs scripts/serve.mjs; do
+for required in AGENTS.md PROGRESS.md feature_list.json CONTEXT.md docs/build-brief.md docs/domain-model.md docs/risks-and-open-questions.md DESIGN.md index.html src/main.js src/presets.js src/roster.js src/score.js src/standings.js src/storage.js src/game.js src/styles.css package.json scripts/smoke.mjs scripts/serve.mjs; do
   if [[ ! -s "$required" ]]; then
     printf 'Missing or empty required file: %s\n' "$required" >&2
     exit 1
@@ -14,6 +14,9 @@ done
 
 printf '%s\n' 'Running baseline checks: node --check src/main.js'
 node --check src/main.js
+
+printf '%s\n' 'Running baseline checks: node --check src/presets.js'
+node --check src/presets.js
 
 printf '%s\n' 'Running baseline checks: node --check src/roster.js'
 node --check src/roster.js
@@ -29,6 +32,9 @@ node --check src/storage.js
 
 printf '%s\n' 'Running baseline checks: node --check src/game.js'
 node --check src/game.js
+
+printf '%s\n' 'Running baseline checks: node --check scripts/presets-test.mjs'
+node --check scripts/presets-test.mjs
 
 printf '%s\n' 'Running baseline checks: node --check scripts/roster-test.mjs'
 node --check scripts/roster-test.mjs
@@ -86,6 +92,9 @@ node --check scripts/browser-quick-score-test.mjs
 
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-player-numbers-test.mjs'
 node --check scripts/browser-player-numbers-test.mjs
+
+printf '%s\n' 'Running baseline checks: node --check scripts/browser-presets-test.mjs'
+node --check scripts/browser-presets-test.mjs
 
 printf '%s\n' 'Running baseline checks: node --check scripts/browser-score-distribution-test.mjs'
 node --check scripts/browser-score-distribution-test.mjs

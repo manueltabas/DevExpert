@@ -211,7 +211,10 @@ const INTERACTIVE_SELECTORS = [
   ["Play again", "[data-action='play-again']"],
   ["Close podium", "[data-action='close-podium']"],
   ["All games back control", "[data-action='back-home']"],
-  ["Add player", "[data-action='add-player']"]
+  ["Add player", "[data-action='add-player']"],
+  // Game-presets superseded the direct title focus/Tab assumption: the six
+  // preset cards are the first setup controls and must meet the target floor.
+  ["Preset cards", ".preset-card"]
 ];
 
 async function assertInteractiveTargets(cdp, label) {
@@ -541,7 +544,9 @@ async function runNavMatrixSession(cdp) {
   await click(cdp, "[data-action='new-game']");
   await waitForSelector(cdp, "#game-title");
   const focusedAfterEmptyNewGame = await evaluate(cdp, () => document.activeElement?.id ?? "");
-  assert.equal(focusedAfterEmptyNewGame, "game-title", "the empty-state New game focuses the title field like the hero");
+  // Superseded by game-presets: the checked preset radio is the first setup
+  // control (the picker now sits above the title).
+  assert.equal(focusedAfterEmptyNewGame, "game-preset-custom", "the empty-state New game focuses the checked Custom preset radio like the hero");
   nav = await readNavState(cdp);
   assert.deepEqual(nav.current, ["nav-new-game"]);
 
@@ -810,7 +815,7 @@ async function main() {
       setupSource: "localStorage.setItem('scorekeeper:games', 'not-json{');"
     });
 
-    console.log("Browser design system test passed: v2 tokens on every view (ivory canvas, cool cards, primary/tertiary/error mappings, frozen muted info color), Plus Jakarta Sans declared first with a blocked-font fallback that keeps hierarchy/tabular numerals/no overflow at 1280x800 and 320x720, the top nav matrix (labels, aria-current per view including finished -> Dashboard, focus-to-heading, Active Game resolution order in-memory -> newest saved -> locked empty state, byte-identical storage across every navigation, scratchpad-preserving New Game, error-clearing Dashboard, locked empty-state copy), >=44px targets everywhere, visible keyboard focus with the skip link first, and reduced-motion confetti suppression with accepted notice copy/role/contrast.");
+    console.log("Browser design system test passed: v2 tokens on every view (ivory canvas, cool cards, primary/tertiary/error mappings, frozen muted info color), Plus Jakarta Sans declared first with a blocked-font fallback that keeps hierarchy/tabular numerals/no overflow at 1280x800 and 320x720, the top nav matrix (labels, aria-current per view including finished -> Dashboard, focus-to-heading, Active Game resolution order in-memory -> newest saved -> locked empty state, byte-identical storage across every navigation, scratchpad-preserving New Game, error-clearing Dashboard, locked empty-state copy), >=44px targets everywhere (including the six Game preset cards), visible keyboard focus with the skip link first, and reduced-motion confetti suppression with accepted notice copy/role/contrast.");
     console.log(`Browser evidence screenshots: ${[offline.offlineDesktopScreenshot, offline.offline320Screenshot, tokens.desktopHomeScreenshot, tokens.desktopFinishedScreenshot, tokens.mobileEmptyScreenshot, navMatrix.navMatrixScreenshot, reduced.reducedScreenshot, notices.noticesScreenshot].join(", ")}`);
   } finally {
     await closeServer(server);

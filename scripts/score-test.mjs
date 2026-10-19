@@ -182,6 +182,63 @@ assert.equal(applyScoreChange({ game, playerId: game.players[0].id, amount: 0 })
 assert.equal(applyScoreChange({ game, playerId: game.players[0].id, amount: 1000001 }).error, "out-of-range");
 assert.equal(applyScoreChange({ game, playerId: game.players[0].id, amount: -1000001 }).error, "out-of-range");
 
+// Preset sign enforcement (game-presets): non-negative presets reject negative
+// amounts with negative-not-allowed after the accepted player/integer/zero/
+// range gates, while positive amounts, Custom, Ticket to Ride, and unknown ids
+// keep signed behavior.
+assert.ok(SCORE_ERROR_CODES.includes("negative-not-allowed"));
+const { game: flipGame } = createGame({
+  title: "Flip 7",
+  rows: [
+    { id: "f-1", name: "Alex", color: "blue" },
+    { id: "f-2", name: "Sam", color: "red" },
+    { id: "f-3", name: "Jamie", color: "green" }
+  ],
+  now: new Date("2026-10-18T10:00:00.000Z"),
+  idSeed: "flip-score",
+  presetId: "flip-7"
+});
+assert.equal(flipGame.presetId, "flip-7");
+const flipSnapshot = structuredClone(flipGame);
+const flipNegative = applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: -3 });
+assert.equal(flipNegative.error, "negative-not-allowed");
+assert.equal(flipNegative.game, null);
+assert.deepEqual(flipGame, flipSnapshot, "a rejected negative leaves the game untouched");
+assert.equal(applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: 0 }).error, "zero", "zero keeps the zero code for non-negative presets");
+assert.equal(applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: -MAX_SCORE_ABS }).error, "negative-not-allowed");
+const flipPositive = applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: 39 });
+assert.equal(flipPositive.error, null);
+assert.equal(flipPositive.game.players[0].total, 39);
+assert.equal(flipPositive.game.changes.length, 1);
+
+// Gate precedence: the earlier accepted checks still win over the sign gate.
+assert.equal(applyScoreChange({ game: flipGame, playerId: "ghost", amount: -3 }).error, "unknown-player");
+assert.equal(applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: -2.5 }).error, "not-integer");
+assert.equal(applyScoreChange({ game: flipGame, playerId: flipGame.players[0].id, amount: -1000001 }).error, "out-of-range");
+
+const signedRows = [
+  { id: "s-1", name: "Alex", color: "blue" },
+  { id: "s-2", name: "Sam", color: "red" },
+  { id: "s-3", name: "Jamie", color: "green" },
+  { id: "s-4", name: "Dee", color: "orange" }
+];
+const { game: ticketGame } = createGame({
+  rows: signedRows,
+  now: new Date("2026-10-18T10:01:00.000Z"),
+  idSeed: "ticket-score",
+  presetId: "ticket-to-ride"
+});
+assert.equal(applyScoreChange({ game: ticketGame, playerId: ticketGame.players[0].id, amount: -10 }).error, null, "Ticket to Ride keeps signed scores");
+const { game: unknownPresetGame } = createGame({
+  rows: signedRows,
+  now: new Date("2026-10-18T10:02:00.000Z"),
+  idSeed: "unknown-score",
+  presetId: "not-a-preset"
+});
+assert.equal("presetId" in unknownPresetGame, false);
+assert.equal(applyScoreChange({ game: unknownPresetGame, playerId: unknownPresetGame.players[0].id, amount: -10 }).error, null, "unknown ids fall back to signed Custom behavior");
+assert.equal(applyScoreChange({ game, playerId: game.players[0].id, amount: -10 }).error, null, "Custom still accepts negatives");
+
 // applyScoreChange: defensive safe-integer guard
 const unsafeGame = {
   ...game,
@@ -352,4 +409,4 @@ assert.equal(appliedRecentEntries[0].change.amount, 7);
 assert.equal(appliedRecentEntries[0].player.id, samId);
 assert.equal(appliedRecentEntries[0].change.at, "2026-10-15T14:00:00.000Z");
 
-console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, per-change `at` ISO stamps from the injectable clock, change log, safe-integer guard, immutability, latest-change undo, and recentScoreChanges (newest-first pairs, cap 5, player resolution, empty guards).");
+console.log("Score tests passed: parse error codes, plain-integer-only gate (1e3/0x10/10. rejected), draft-pattern predicates, signed bounds, zero rejection, preset negative-not-allowed enforcement after the accepted gates (with Custom/Ticket-to-Ride/unknown fallback still signed), per-change `at` ISO stamps from the injectable clock, change log, safe-integer guard, immutability, latest-change undo, and recentScoreChanges (newest-first pairs, cap 5, player resolution, empty guards).");

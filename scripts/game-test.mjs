@@ -58,6 +58,38 @@ assert.ok(!("finishedAt" in freshResult.game), "no finishedAt field may be store
 assert.ok(freshResult.game.players.every((player) => !("rank" in player)), "no rank fields may be stored");
 assert.ok(!("rank" in freshResult.game), "the game must not gain a rank field");
 
+// Presets survive the lifecycle (game-presets): finishGame's spread preserves
+// presetId, and replayGame copies a valid non-custom preset through createGame
+// while still starting untitled. Custom/unknown sources omit the field.
+const { game: presetFinishedSource } = createGame({
+  title: "Flip 7 finals",
+  rows: [
+    { id: "row-1", name: "Alex", color: "blue" },
+    { id: "row-2", name: "Sam", color: "red" },
+    { id: "row-3", name: "Jamie", color: "green" }
+  ],
+  now: new Date("2026-10-18T10:00:00.000Z"),
+  idSeed: "preset-finish",
+  presetId: "flip-7"
+});
+assert.equal(presetFinishedSource.presetId, "flip-7");
+const presetFinished = finishGame({ game: presetFinishedSource });
+assert.equal(presetFinished.error, null);
+assert.equal(presetFinished.game.presetId, "flip-7", "finishing preserves the preset");
+const presetReplay = replayGame({ game: presetFinished.game, now: new Date("2026-10-18T11:00:00.000Z") });
+assert.equal(presetReplay.error, null);
+assert.equal(presetReplay.game.presetId, "flip-7", "a valid non-custom preset is copied into the replay");
+assert.equal(presetReplay.game.title, "", "a preset replay still starts untitled");
+assert.deepEqual(presetReplay.game.players.map((player) => player.total), [0, 0, 0]);
+const customReplay = replayGame({ game: freshResult.game, now: new Date("2026-10-18T11:01:00.000Z") });
+assert.equal("presetId" in customReplay.game, false, "a Custom or pre-feature replay omits presetId");
+const unknownPresetReplay = replayGame({
+  game: { ...presetFinished.game, presetId: "not-a-preset" },
+  now: new Date("2026-10-18T11:02:00.000Z")
+});
+assert.equal(unknownPresetReplay.error, null);
+assert.equal("presetId" in unknownPresetReplay.game, false, "an unknown stored preset id is omitted on replay");
+
 // finishGame preserves players, totals, and the full change log of a scored game
 const { game: scoredGame } = createGame({
   title: "Scored finish",
@@ -469,5 +501,5 @@ assert.deepEqual(
 );
 assert.ok(!("at" in datableGame), "the input game must never gain change fields");
 
-console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields, preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed that start untitled (the original title is never copied) with copied names/colors/markers/order, literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, non-mutating replay input, renameGame guards (missing-game/already-finished/invalid-title/title-too-long) with trim-once success and no input mutation, displayGameTitle verbatim/auto-label/Game fallback formatting, formatRelativeTimestamp deterministic buckets (just now / minutes / hours / days / absolute ≥ 7 days) with skew, boundary, purity, and null fallbacks, per-change `at` stamps from the injectable clock, and a local error-code list.");
+console.log("Game tests passed: finishGame guards (missing-game/already-finished), non-mutating transition, status-only change with no new fields (presetId preserved by the spread), preserved players/change log/order, double-finish rejection, fresh and 20-player games, replayGame guards (missing-game/not-finished/invalid-roster), replayed games with new game-scoped identities via the replay-game seed that start untitled (the original title is never copied) and copy a valid non-custom preset while Custom/unknown sources omit the field, copied names/colors/markers/order, literal restoration and regenerated fallbacks, zero totals with no change log or updatedAt, non-mutating replay input, renameGame guards (missing-game/already-finished/invalid-title/title-too-long) with trim-once success and no input mutation, displayGameTitle verbatim/auto-label/Game fallback formatting, formatRelativeTimestamp deterministic buckets (just now / minutes / hours / days / absolute ≥ 7 days) with skew, boundary, purity, and null fallbacks, per-change `at` stamps from the injectable clock, and a local error-code list.");
 

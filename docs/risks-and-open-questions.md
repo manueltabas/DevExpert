@@ -8,6 +8,7 @@ None. The v2 scope, visual source of truth, and stack approach are agreed; featu
 
 - Game identification (previously implementation-time): optional title set during setup, editable while in progress, frozen at finish; blank titles display an auto date-based label. Chosen with the v2 design.
 - Tailwind: rejected. Tokens are translated to plain CSS custom properties; web fonts are linked, not bundled.
+- Game presets (previously mockup decoration): approved as the fixed six-option `game-presets` catalogue (Custom, Flip 7, Catan, Ticket to Ride, 7 Wonders, Yahtzee) with preset ranges/defaults, ordered quick actions including Flip 7's draft-only ×2, sign policy, and informational targets. The optional `presetId` is stored only for known non-custom games; targets never auto-finish, zero stays invalid, and Custom remains the universal fallback. User-defined presets and a wider catalog stay out of scope.
 
 ## Implementation-time decisions
 
@@ -26,7 +27,7 @@ None. The v2 scope, visual source of truth, and stack approach are agreed; featu
 
 ## Later / outside MVP
 
-Choose a static hosting provider when deployment is requested. Offline/PWA support, export/import, deletion of saved games, and concurrent browser-tab editing are not part of the agreed initial scope. The mockup decoration items called out in the brief's non-goals (rounds, timers, statistics, presets, roster reuse, one-tap games) stay out of scope here too.
+Choose a static hosting provider when deployment is requested. Offline/PWA support, export/import, deletion of saved games, and concurrent browser-tab editing are not part of the agreed initial scope. The mockup decoration items still called out in the brief's non-goals (rounds, timers, statistics, roster reuse, one-tap games) stay out of scope here too. User-defined presets, per-game action editing, and a wider board-game catalog are also out of scope; the approved fixed preset catalogue is in scope.
 
 ## Risks and responses
 
@@ -36,6 +37,9 @@ Choose a static hosting provider when deployment is requested. Offline/PWA suppo
 - Celebration motion can be distracting. Keep confetti brief and respect reduced-motion settings.
 - Linked web fonts and icon fonts fail offline or on flaky connections. System fallbacks must keep the layout usable; verify an offline render.
 - The v2 mockups are denser than the current UI (distribution bar, entry log, chips). Verify contrast, focus order, and touch targets; written behavior takes precedence over decorative details.
+- Selecting a smaller preset clamps a touched roster and removes its trailing rows, so names entered beyond the new maximum can be lost before the game starts. This is accepted pre-game behavior: the count/status pill makes the reduction visible, the retained rows keep names/colors, and no confirmation dialog is added.
+- Preset sign/zero copy can contradict itself if handled statically: the zero message must follow the active preset (positive-only vs signed) while Ticket to Ride/Custom keep the accepted text, and `negative-not-allowed` must run only after the existing zero/range gates.
+- Flip 7's ×2 and the non-negative draft floor are draft-only semantics; they must not create a second score pipeline, a new save trigger, or an auto-finish at the target.
 
 ## Research tasks
 

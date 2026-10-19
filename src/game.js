@@ -141,7 +141,8 @@ export function replayGame({ game, now = new Date() } = {}) {
     title: "",
     rows,
     now,
-    idSeed: "replay-game"
+    idSeed: "replay-game",
+    presetId: game.presetId
   });
 
   if (!result.game) {

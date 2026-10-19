@@ -1,3 +1,5 @@
+import { CUSTOM_PRESET_ID, getPreset, normalizePresetId } from "./presets.js";
+
 export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 20;
 export const MAX_NAME_LENGTH = 40;
@@ -33,15 +35,25 @@ export function getColor(colorId) {
   return PLAYER_COLORS.find((color) => color.id === colorId) ?? PLAYER_COLORS[0];
 }
 
-export function validateRoster(rows) {
+export function validateRoster(rows, presetId = CUSTOM_PRESET_ID) {
   const errors = [];
+  const preset = getPreset(presetId);
+  const isCustom = preset.id === CUSTOM_PRESET_ID;
 
-  if (rows.length < MIN_PLAYERS) {
-    errors.push(`Add at least ${MIN_PLAYERS} players.`);
+  if (rows.length < preset.minPlayers) {
+    errors.push(
+      isCustom
+        ? `Add at least ${preset.minPlayers} players.`
+        : `Add at least ${preset.minPlayers} players for ${preset.label}.`
+    );
   }
 
-  if (rows.length > MAX_PLAYERS) {
-    errors.push(`Keep the table to ${MAX_PLAYERS} players or fewer.`);
+  if (rows.length > preset.maxPlayers) {
+    errors.push(
+      isCustom
+        ? `Keep the table to ${preset.maxPlayers} players or fewer.`
+        : `Keep the table to ${preset.maxPlayers} players or fewer for ${preset.label}.`
+    );
   }
 
   rows.forEach((row, index) => {
@@ -66,12 +78,16 @@ export function validateRoster(rows) {
   };
 }
 
-export function createGame({ title, rows, now = new Date(), idSeed = "game" }) {
-  const validation = validateRoster(rows);
+export function createGame({ title, rows, now = new Date(), idSeed = "game", presetId }) {
+  const validation = validateRoster(rows, presetId);
 
   if (!validation.valid) {
     return { game: null, validation };
   }
+
+  // Only known non-custom presets are stored; Custom, missing, and unknown ids
+  // are omitted so pre-feature and Custom games keep the original shape.
+  const storedPresetId = normalizePresetId(presetId);
 
   // Blank-after-trim means "no title": the trimmed title is stored verbatim
   // (possibly "") and display surfaces derive an auto label at render time.
@@ -83,6 +99,7 @@ export function createGame({ title, rows, now = new Date(), idSeed = "game" }) {
       id: `${idSeed}-${now.getTime()}`,
       title: trimmedTitle,
       status: "active",
+      ...(storedPresetId ? { presetId: storedPresetId } : {}),
       createdAt: now.toISOString(),
       players: rows.map((row, index) => ({
         id: `${idSeed}-player-${index + 1}`,
