@@ -37,6 +37,7 @@ Behavioral additions, chosen because they are cheap and fit the existing data:
 - **Podium actions**: Play again, Close & view full standings, and Save & exit to Dashboard, plus a `Game concluded` pill and a corner X that dismisses through the same funnel without becoming a fourth action.
 - **Podium steps and ranked summary**: tactile ordered rank-2/rank-1/rank-3 steps with contestants above Winner/Silver/Bronze pedestals, a taller center with a rank-1 crown, ties preserved, missing ranks omitted, the exact tie note, and ranked summary cards for every player (including ranks above 3) in competition-rank groups.
 - **Dashboard history dialog**: each panel previews five games; above five, a View all (N) opener opens a scrollable modal listing every game of that status in the accepted order, returning focus to the opener and never writing storage.
+- **Game presets**: a fixed six-option setup catalogue — Custom (default), Flip 7, Catan, Ticket to Ride, 7 Wonders, and Yahtzee — supplies player bounds/defaults, an auto-filled title, preset quick actions (including Flip 7's draft-only ×2), sign policy, and informational target/hint text. Setup clamps or resizes the roster safely and never overwrites a user title; the optional `presetId` is stored only for non-custom games, survives resume/finish, and is copied by Play again while the replay still starts untitled. Targets never auto-finish, zero remains invalid, and old/custom/unknown games behave exactly like Custom.
 
 ## Technical direction
 
@@ -52,7 +53,7 @@ The repository owner operates the initial app. Hosting provider selection can wa
 
 Accounts, device synchronization, live multiplayer, mandatory round entry, decimal scores, lowest-score-wins modes, editing finished results, board-game catalogs, and long-term player statistics. Offline installation, export/import, and shared-tab editing are deferred.
 
-From the v2 mockups, explicitly decoration and out of scope: round/turn tracking and elapsed-time timers ("Round 6", "Turn 6 · 48m"), dashboard statistics such as win streaks, active-roster counts, and "nights recorded" totals, named game presets (Catan/Duel/Wingspan), cross-game roster reuse ("Fill group"), and one-tap default games ("Quick 4-player game").
+From the v2 mockups, explicitly decoration and out of scope: round/turn tracking and elapsed-time timers ("Round 6", "Turn 6 · 48m"), dashboard statistics such as win streaks, active-roster counts, and "nights recorded" totals, cross-game roster reuse ("Fill group"), and one-tap default games ("Quick 4-player game"). Named presets are no longer excluded decoration: the approved fixed six-option `game-presets` catalogue above is in scope, while user-defined presets and a wider board-game catalog remain out of scope.
 
 ## Validation and success criteria
 

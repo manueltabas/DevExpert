@@ -1,6 +1,5 @@
 import {
   MAX_NAME_LENGTH,
-  MAX_PLAYERS,
   MAX_TITLE_LENGTH,
   MIN_PLAYERS,
   PLAYER_COLORS,
@@ -23,6 +22,12 @@ import {
 import { podiumRows, rankPlayers, scoreDistribution } from "./standings.js";
 import { finishGame, displayGameTitle, formatRelativeTimestamp, renameGame, replayGame } from "./game.js";
 import {
+  CUSTOM_PRESET_ID,
+  GAME_PRESETS,
+  getPreset,
+  resolvePlayerCount
+} from "./presets.js";
+import {
   loadSavedGames,
   orderSavedGamesForDisplay,
   saveGames,
@@ -34,6 +39,9 @@ const yearTarget = document.querySelector("[data-current-year]");
 const state = {
   view: "home",
   title: "",
+  presetId: CUSTOM_PRESET_ID,
+  rosterTouched: false,
+  titleAutoFilled: false,
   rows: createSetupRows(),
   activeGame: null,
   selectedPlayerId: null,
@@ -78,18 +86,13 @@ const HISTORY_DIALOGS = {
   }
 };
 
-// Quick tap presets (add-quick-score-entry): the mockup's seven signed
-// amounts, locked as a local constant. Each tap stages the points draft
-// (refine-ui-after-testing superseded immediate apply); Save points applies
-// the combined draft as one ordinary score change.
-const QUICK_SCORE_PRESETS = [1, 5, 10, 25, -1, -5, -10];
-
 const SCORE_ERROR_MESSAGES = {
   "empty": "Enter an amount first.",
   "not-a-number": "Enter a whole number, like 10 or -3.",
   "not-integer": "Decimals are not allowed. Enter a whole number like 10 or -3.",
   "zero": "Zero adds no points. Enter a positive or negative amount.",
   "out-of-range": `Amounts must stay between ${-MAX_SCORE_ABS} and ${MAX_SCORE_ABS}.`,
+  "negative-not-allowed": "This preset only adds points. Enter a positive amount.",
   "unknown-player": "Select a player before saving points.",
   "not-safe": "That change would create an unsafe total. Try a smaller amount.",
   "nothing-to-undo": "Nothing to undo yet.",
@@ -319,7 +322,9 @@ function renderHome() {
     resetSetup();
     state.view = "setup";
     render();
-    appRoot.querySelector("#game-title")?.focus();
+    // Superseded by game-presets: a full reset starts on Custom and lands focus
+    // on the checked preset radio (the picker now sits above the title).
+    appRoot.querySelector(`#game-preset-${state.presetId}`)?.focus();
   });
 
   appRoot.querySelectorAll("[data-action='resume-game']").forEach((button) => {
@@ -627,9 +632,10 @@ function handleResume(gameId) {
 }
 
 function renderSetup() {
-  const validation = validateRoster(state.rows);
-  const atLimit = state.rows.length >= MAX_PLAYERS;
-  const canRemove = state.rows.length > MIN_PLAYERS;
+  const preset = getPreset(state.presetId);
+  const validation = validateRoster(state.rows, state.presetId);
+  const atLimit = state.rows.length >= preset.maxPlayers;
+  const canRemove = state.rows.length > preset.minPlayers;
 
   appRoot.innerHTML = `
     <section class="setup-layout" aria-labelledby="setup-title">
@@ -639,10 +645,19 @@ function renderSetup() {
             <p class="eyebrow">New game</p>
             <h2 id="setup-title" tabindex="-1" data-setup-heading>Who is playing?</h2>
           </div>
-          <span class="status-pill">${state.rows.length}/${MAX_PLAYERS} players</span>
+          <span class="status-pill">${state.rows.length}/${preset.maxPlayers} players</span>
         </div>
 
         <form class="roster-form" novalidate data-roster-form>
+          <fieldset class="preset-picker" data-preset-picker>
+            <legend class="field-label">Game preset</legend>
+            <div class="preset-options">
+              ${GAME_PRESETS.map((option) => renderPresetCard(option, option.id === preset.id)).join("")}
+            </div>
+          </fieldset>
+
+          ${renderPresetDetail(preset)}
+
           <label class="field-label" for="game-title">Game title</label>
           <input id="game-title" class="text-field" name="title" maxlength="${MAX_TITLE_LENGTH}" value="${escapeAttribute(state.title)}" placeholder="Optional — e.g. Friday game night" autocomplete="off">
 
@@ -660,7 +675,7 @@ function renderSetup() {
             <button type="submit" class="primary-action" aria-describedby="setup-help setup-feedback">Start game</button>
             <button type="button" class="ghost-action" data-action="back-home">Back</button>
           </div>
-          <p id="setup-help" class="assistive-text">Start with ${MIN_PLAYERS} to ${MAX_PLAYERS} players. Names can repeat, but blank names cannot start a game.</p>
+          <p id="setup-help" class="assistive-text">Start with ${preset.minPlayers} to ${preset.maxPlayers} players. Names can repeat, but blank names cannot start a game.</p>
         </form>
       </div>
 
@@ -682,6 +697,40 @@ function renderSetup() {
   `;
 
   bindSetupEvents();
+}
+
+function renderPresetCard(preset, checked) {
+  return `
+    <label class="preset-card">
+      <input type="radio" name="game-preset" value="${preset.id}" id="game-preset-${preset.id}" data-action="select-preset" ${checked ? "checked" : ""}>
+      <span class="preset-card-label">${escapeHtml(preset.label)}</span>
+    </label>
+  `;
+}
+
+// Selected detail: a polite live region showing the preset's range, target,
+// setup/score hints, and a non-interactive preview of its quick actions.
+function renderPresetDetail(preset) {
+  const hintLines = [preset.setupHint, preset.scoreHint].filter(Boolean);
+
+  return `
+    <section class="preset-detail" aria-live="polite" data-preset-detail data-preset-id="${preset.id}">
+      <p class="preset-detail-range" data-preset-range>${preset.minPlayers}–${preset.maxPlayers} players</p>
+      ${preset.target ? `<p class="preset-detail-target" data-preset-target>Target ${escapeHtml(preset.target)}</p>` : ""}
+      ${hintLines.map((line) => `<p class="preset-detail-hint">${escapeHtml(line)}</p>`).join("")}
+      <div class="preset-chips" role="group" aria-label="Quick actions for ${escapeAttribute(preset.label)}">
+        ${preset.quickActions.map((action) => `<span class="preset-chip${action.type === "multiply" ? " is-multiply" : ""}">${escapeHtml(quickActionLabel(action))}</span>`).join("")}
+      </div>
+    </section>
+  `;
+}
+
+function quickActionLabel(action) {
+  if (action.type === "multiply") {
+    return `×${action.factor}`;
+  }
+
+  return action.amount > 0 ? `+${action.amount}` : `-${Math.abs(action.amount)}`;
 }
 
 function renderSetupRow(row, index, canRemove) {
@@ -717,12 +766,24 @@ function bindSetupEvents() {
 
   appRoot.querySelector("#game-title")?.addEventListener("input", (event) => {
     state.title = event.target.value;
+    // A manual edit takes ownership: preset switches may no longer overwrite
+    // the title until it is blanked again.
+    state.titleAutoFilled = false;
+  });
+
+  appRoot.querySelectorAll("[data-action='select-preset']").forEach((input) => {
+    input.addEventListener("change", (event) => {
+      if (event.target.checked) {
+        selectPreset(event.target.value);
+      }
+    });
   });
 
   appRoot.querySelectorAll("[data-field='name']").forEach((input) => {
     input.addEventListener("input", (event) => {
       const row = event.target.closest("[data-player-index]");
       state.rows[Number(row.dataset.playerIndex)].name = event.target.value;
+      state.rosterTouched = true;
       state.errors = [];
     });
   });
@@ -731,24 +792,28 @@ function bindSetupEvents() {
     input.addEventListener("change", (event) => {
       const row = event.target.closest("[data-player-index]");
       state.rows[Number(row.dataset.playerIndex)].color = event.target.value;
+      state.rosterTouched = true;
       state.errors = [];
       render();
     });
   });
 
   appRoot.querySelector("[data-action='add-player']")?.addEventListener("click", () => {
-    if (state.rows.length >= MAX_PLAYERS) {
-      state.limitMessage = `You can add up to ${MAX_PLAYERS} players.`;
+    const preset = getPreset(state.presetId);
+
+    if (state.rows.length >= preset.maxPlayers) {
+      state.limitMessage = `You can add up to ${preset.maxPlayers} players.`;
       render();
       return;
     }
 
+    state.rosterTouched = true;
     state.rows.push({
       ...createSetupRow(state.nextRowNumber, state.rows.length),
       color: colorForIndex(state.rows.length)
     });
     state.nextRowNumber += 1;
-    state.limitMessage = state.rows.length >= MAX_PLAYERS ? `You can add up to ${MAX_PLAYERS} players.` : "";
+    state.limitMessage = state.rows.length >= preset.maxPlayers ? `You can add up to ${preset.maxPlayers} players.` : "";
     state.errors = [];
     render();
     appRoot.querySelector(`[data-player-index="${state.rows.length - 1}"] input`)?.focus();
@@ -756,10 +821,12 @@ function bindSetupEvents() {
 
   appRoot.querySelectorAll("[data-action='remove-player']").forEach((button) => {
     button.addEventListener("click", (event) => {
+      const preset = getPreset(state.presetId);
       const row = event.target.closest("[data-player-index]");
-      if (state.rows.length <= MIN_PLAYERS) {
+      if (state.rows.length <= preset.minPlayers) {
         return;
       }
+      state.rosterTouched = true;
       state.rows.splice(Number(row.dataset.playerIndex), 1);
       state.limitMessage = "";
       state.errors = [];
@@ -781,7 +848,8 @@ function bindSetupEvents() {
       title: state.title,
       rows: state.rows,
       now: new Date(),
-      idSeed: "active-game"
+      idSeed: "active-game",
+      presetId: state.presetId
     });
 
     if (!validation.valid || !game) {
@@ -805,6 +873,49 @@ function bindSetupEvents() {
   });
 }
 
+// Preset selection (game-presets): resolve the canonical preset, resize the
+// roster only when the scorekeeper has not edited it (otherwise clamp the
+// current rows, preserving retained names/colors), auto-fill only an empty or
+// preset-written title, clear feedback, and return focus to the selected radio.
+// Preset-driven resizing never marks the roster touched.
+function selectPreset(presetId) {
+  const preset = getPreset(presetId);
+  state.presetId = preset.id;
+
+  if (!state.rosterTouched) {
+    state.rows = createSetupRows(preset.defaultPlayers);
+    state.nextRowNumber = preset.defaultPlayers + 1;
+  } else {
+    const targetCount = resolvePlayerCount({
+      presetId: preset.id,
+      currentCount: state.rows.length,
+      touched: true
+    });
+
+    if (targetCount < state.rows.length) {
+      state.rows = state.rows.slice(0, targetCount);
+    } else if (targetCount > state.rows.length) {
+      while (state.rows.length < targetCount) {
+        state.rows.push({
+          ...createSetupRow(state.nextRowNumber, state.rows.length),
+          color: colorForIndex(state.rows.length)
+        });
+        state.nextRowNumber += 1;
+      }
+    }
+  }
+
+  if (state.title.trim() === "" || state.titleAutoFilled) {
+    state.title = preset.defaultTitle;
+    state.titleAutoFilled = preset.defaultTitle !== "";
+  }
+
+  state.errors = [];
+  state.limitMessage = "";
+  render();
+  appRoot.querySelector(`#game-preset-${preset.id}`)?.focus();
+}
+
 function renderActiveGame() {
   const game = state.activeGame;
 
@@ -824,6 +935,9 @@ function renderActiveGame() {
   }
 
   const selectedPlayer = game.players.find((player) => player.id === state.selectedPlayerId) ?? null;
+  // The active game owns its preset; missing/Custom/old/unknown ids all resolve
+  // to the signed Custom behavior through getPreset.
+  const preset = getPreset(game.presetId);
   // Badge numbers derive once per surface render (show-player-numbers) and are
   // threaded into the row/card renderers; nothing here writes storage.
   const numbers = playerNumbers(game);
@@ -877,7 +991,7 @@ function renderActiveGame() {
             <h3 id="score-panel-title">Add points</h3>
           </div>
         </div>
-        ${selectedPlayer ? renderScoreForm(selectedPlayer, numbers.get(selectedPlayer.id)) : ""}
+        ${selectedPlayer ? renderScoreForm(selectedPlayer, numbers.get(selectedPlayer.id), preset) : ""}
         ${renderRecentEntries(game)}
       </aside>
     </section>
@@ -992,7 +1106,8 @@ function renderActiveEmpty() {
     resetSetup();
     state.view = "setup";
     render();
-    appRoot.querySelector("#game-title")?.focus();
+    // Superseded by game-presets: full-reset focus lands on the checked radio.
+    appRoot.querySelector(`#game-preset-${state.presetId}`)?.focus();
   });
 }
 
@@ -1384,8 +1499,14 @@ function renderActivePlayer(player, rank, isSelected, playerNumber) {
   `;
 }
 
-function renderScoreForm(player, playerNumber) {
+function renderScoreForm(player, playerNumber, preset) {
   const color = getColor(player.color);
+  const min = preset.allowsNegative ? -MAX_SCORE_ABS : 0;
+  const helperText = preset.allowsNegative
+    ? `Use negative points for penalties. Whole numbers from ${-MAX_SCORE_ABS} to ${MAX_SCORE_ABS}.`
+    : `This preset only adds points. Whole numbers from 0 to ${MAX_SCORE_ABS}.`;
+  const hint = presetScoreHint(preset);
+  const describedBy = `score-help${hint ? " preset-hint" : ""} score-feedback`;
 
   return `
     <form class="score-form" novalidate data-score-form>
@@ -1398,15 +1519,17 @@ function renderScoreForm(player, playerNumber) {
       <label class="field-label" for="score-amount">Points for ${escapeHtml(player.name)}</label>
       <div class="score-stepper">
         <button type="button" class="stepper-action" data-action="step-score-down" aria-label="Decrease points draft by 1 for ${escapeAttribute(player.name)}">-</button>
-        <input id="score-amount" class="text-field score-amount-field" name="amount" type="number" step="1" min="${-MAX_SCORE_ABS}" max="${MAX_SCORE_ABS}" autocomplete="off" aria-describedby="score-help score-feedback">
+        <input id="score-amount" class="text-field score-amount-field" name="amount" type="number" step="1" min="${min}" max="${MAX_SCORE_ABS}" autocomplete="off" aria-describedby="${describedBy}">
         <button type="button" class="stepper-action" data-action="step-score-up" aria-label="Increase points draft by 1 for ${escapeAttribute(player.name)}">+</button>
       </div>
 
-      <p id="score-help" class="assistive-text">Use negative points for penalties. Whole numbers from ${-MAX_SCORE_ABS} to ${MAX_SCORE_ABS}.</p>
+      <p id="score-help" class="assistive-text">${helperText}</p>
+
+      ${hint ? `<p id="preset-hint" class="preset-hint" data-preset-hint>${escapeHtml(hint)}</p>` : ""}
 
       <div id="score-feedback" class="form-feedback" aria-live="polite">${renderScoreFeedback()}</div>
 
-      ${renderQuickScores(player)}
+      ${renderQuickScores(player, preset)}
 
       <button type="submit" class="primary-action">Save points</button>
       <button type="button" class="secondary-action" data-action="undo-last-score">Undo last score</button>
@@ -1414,23 +1537,60 @@ function renderScoreForm(player, playerNumber) {
   `;
 }
 
-// Quick tap counters (add-quick-score-entry): the mockup's seven presets as
-// two rows (+ row then − row) inside one labelled group, rendered between the
-// polite feedback region and Save points. Every control is type="button" so a
+// Targets are informational only and always render as a hint line; they never
+// finish a game or disable scoring.
+function presetScoreHint(preset) {
+  const parts = [];
+
+  if (preset.target) {
+    parts.push(`Target ${preset.target}.`);
+  }
+
+  if (preset.scoreHint) {
+    parts.push(preset.scoreHint);
+  }
+
+  return parts.join(" ");
+}
+
+// Quick tap counters (add-quick-score-entry; preset-driven since game-presets):
+// one labelled group. Multiplier actions render first, then positive adds, then
+// negative adds, with empty rows omitted. Every control is type="button" so a
 // tap can never submit the form; negative chips carry the soft-tint class.
-function renderQuickScores(player) {
-  const positiveRow = QUICK_SCORE_PRESETS.filter((amount) => amount > 0);
-  const negativeRow = QUICK_SCORE_PRESETS.filter((amount) => amount < 0);
+function renderQuickScores(player, preset) {
+  const multipliers = preset.quickActions.filter((action) => action.type === "multiply");
+  const positiveRow = preset.quickActions.filter((action) => action.type === "add" && action.amount > 0);
+  const negativeRow = preset.quickActions.filter((action) => action.type === "add" && action.amount < 0);
+  const rows = [];
+
+  if (multipliers.length > 0) {
+    rows.push(`
+      <div class="quick-scores-row">
+        ${multipliers.map((action) => renderMultiplyScoreButton(action, player)).join("")}
+      </div>
+    `);
+  }
+
+  if (positiveRow.length > 0) {
+    rows.push(`
+      <div class="quick-scores-row">
+        ${positiveRow.map((action) => renderQuickScoreButton(action.amount, player)).join("")}
+      </div>
+    `);
+  }
+
+  if (negativeRow.length > 0) {
+    rows.push(`
+      <div class="quick-scores-row">
+        ${negativeRow.map((action) => renderQuickScoreButton(action.amount, player)).join("")}
+      </div>
+    `);
+  }
 
   return `
-    <div class="quick-scores" role="group" aria-label="Quick tap counters">
+    <div class="quick-scores preset-quick-scores" role="group" aria-label="Quick tap counters" data-preset-id="${preset.id}">
       <p class="eyebrow quick-scores-eyebrow">Quick tap counters</p>
-      <div class="quick-scores-row">
-        ${positiveRow.map((amount) => renderQuickScoreButton(amount, player)).join("")}
-      </div>
-      <div class="quick-scores-row">
-        ${negativeRow.map((amount) => renderQuickScoreButton(amount, player)).join("")}
-      </div>
+      ${rows.join("")}
     </div>
   `;
 }
@@ -1445,6 +1605,14 @@ function renderQuickScoreButton(amount, player) {
 
   return `
     <button type="button" class="quick-score-action${amount < 0 ? " is-negative" : ""}" data-action="apply-quick-score" data-amount="${amount}" aria-label="Add ${amount} ${pointsWord} to the points draft for ${escapeAttribute(player.name)}">${visibleLabel}</button>
+  `;
+}
+
+// Flip 7's ×2 stages the draft only: it doubles the current draft, clamps,
+// writes plain integer text, never saves, and keeps focus on the control.
+function renderMultiplyScoreButton(action, player) {
+  return `
+    <button type="button" class="quick-score-action is-multiply" data-action="multiply-score-draft" data-factor="${action.factor}" aria-label="Double the points draft for ${escapeAttribute(player.name)}">×${action.factor}</button>
   `;
 }
 
@@ -1626,6 +1794,12 @@ function bindActiveEvents() {
   appRoot.querySelectorAll("[data-action='apply-quick-score']").forEach((button) => {
     button.addEventListener("click", () => {
       handleQuickScore(Number(button.dataset.amount));
+    });
+  });
+
+  appRoot.querySelectorAll("[data-action='multiply-score-draft']").forEach((button) => {
+    button.addEventListener("click", () => {
+      handleMultiplyDraft(Number(button.dataset.factor));
     });
   });
 
@@ -1818,7 +1992,7 @@ function handleScoreSubmit() {
   const parsed = parseScoreAmount(input.value);
 
   if (parsed.error) {
-    rejectScoreEntry(SCORE_ERROR_MESSAGES[parsed.error] ?? SCORE_ERROR_MESSAGES["not-a-number"]);
+    rejectScoreEntry(scoreErrorMessage(parsed.error));
     return false;
   }
 
@@ -1830,7 +2004,7 @@ function handleScoreSubmit() {
   });
 
   if (result.error || !result.game || !targetPlayer) {
-    rejectScoreEntry(SCORE_ERROR_MESSAGES[result.error] ?? SCORE_ERROR_MESSAGES["unknown-player"]);
+    rejectScoreEntry(scoreErrorMessage(result.error ?? "unknown-player"));
     return false;
   }
 
@@ -1859,9 +2033,10 @@ function handleQuickScore(amount) {
 }
 
 // Shared draft helper for the stepper and the quick counters: read the
-// trimmed draft with parseInt, start from 0 for empty/unparseable text, add
-// the delta, clamp to ±MAX_SCORE_ABS, and write plain integer text. It never
-// renders, paints feedback, or saves.
+// trimmed draft with parseInt, start from 0 for empty/unparseable text, apply
+// the preset's floor (0 for non-negative presets, where a typed negative
+// baseline is treated as 0), add the delta, clamp, and write plain integer
+// text. It never renders, paints feedback, or saves.
 function applyDraftDelta(delta) {
   const input = appRoot.querySelector("#score-amount");
 
@@ -1869,14 +2044,36 @@ function applyDraftDelta(delta) {
     return;
   }
 
+  const preset = getPreset(state.activeGame?.presetId);
+  const floor = preset.allowsNegative ? -MAX_SCORE_ABS : 0;
   const parsed = Number.parseInt(String(input.value).trim(), 10);
-  const baseline = Number.isFinite(parsed) ? parsed : 0;
-  const next = Math.max(-MAX_SCORE_ABS, Math.min(MAX_SCORE_ABS, baseline + delta));
+  const rawBaseline = Number.isFinite(parsed) ? parsed : 0;
+  const baseline = Math.max(floor, rawBaseline);
+  const next = Math.max(floor, Math.min(MAX_SCORE_ABS, baseline + delta));
   input.value = String(next);
 }
 
 function stepScoreDraft(direction) {
   applyDraftDelta(direction);
+}
+
+// Flip 7 ×2 (game-presets): doubles the current draft only. Like the counters
+// it never adds to a total, renders, saves, or moves focus; Save points later
+// applies the staged number as one ordinary change.
+function handleMultiplyDraft(factor) {
+  const input = appRoot.querySelector("#score-amount");
+
+  if (!input) {
+    return;
+  }
+
+  const preset = getPreset(state.activeGame?.presetId);
+  const floor = preset.allowsNegative ? -MAX_SCORE_ABS : 0;
+  const parsed = Number.parseInt(String(input.value).trim(), 10);
+  const rawBaseline = Number.isFinite(parsed) ? parsed : 0;
+  const baseline = Math.max(floor, rawBaseline);
+  const next = Math.max(floor, Math.min(MAX_SCORE_ABS, baseline * factor));
+  input.value = String(next);
 }
 
 function handleUndo() {
@@ -1939,6 +2136,19 @@ function persistActiveGameSnapshot() {
   if (state.storageReadError === "unavailable") {
     state.storageReadError = null;
   }
+}
+
+// The zero message follows the active preset: signed presets keep the accepted
+// positive-or-negative wording, non-negative presets ask for a positive amount.
+function scoreErrorMessage(code) {
+  if (code === "zero") {
+    const preset = getPreset(state.activeGame?.presetId);
+    return preset.allowsNegative
+      ? "Zero adds no points. Enter a positive or negative amount."
+      : "Zero adds no points. Enter a positive amount.";
+  }
+
+  return SCORE_ERROR_MESSAGES[code] ?? SCORE_ERROR_MESSAGES["not-a-number"];
 }
 
 function rejectScoreEntry(message) {
@@ -2006,6 +2216,9 @@ function paintTitleEditFeedback() {
 
 function resetSetup() {
   state.title = "";
+  state.presetId = CUSTOM_PRESET_ID;
+  state.rosterTouched = false;
+  state.titleAutoFilled = false;
   state.rows = createSetupRows();
   state.activeGame = null;
   state.selectedPlayerId = null;

@@ -1,3 +1,5 @@
+import { allowsNegative } from "./presets.js";
+
 export const MAX_SCORE_ABS = 1_000_000;
 
 // The Recent entries panel cap (track-game-activity; reduced from 8 to 5 by
@@ -12,6 +14,7 @@ export const SCORE_ERROR_CODES = [
   "not-integer",
   "zero",
   "out-of-range",
+  "negative-not-allowed",
   "unknown-player",
   "not-safe",
   "nothing-to-undo"
@@ -84,6 +87,13 @@ export function applyScoreChange({ game, playerId, amount, now = new Date() }) {
 
   if (Math.abs(amount) > MAX_SCORE_ABS) {
     return { game: null, error: "out-of-range" };
+  }
+
+  // Preset sign policy runs after the accepted player/integer/zero/range gates,
+  // so zero keeps its own code for every preset and unknown ids fall back to
+  // Custom (signed) behavior.
+  if (amount < 0 && !allowsNegative(game?.presetId)) {
+    return { game: null, error: "negative-not-allowed" };
   }
 
   const nextTotal = player.total + amount;

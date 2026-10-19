@@ -71,6 +71,63 @@ assert.equal(twentyRows[0].color, twentyRows[7].color);
 const twentyOneRows = [...twentyRows, { id: "extra", name: "Extra", color: "blue" }];
 assert.equal(validateRoster(twentyOneRows).valid, false);
 
+// Preset-aware validation (game-presets): the resolved preset's min/max replace
+// the Custom bounds while the name/color checks stay shared.
+const twoNamedRows = [
+  { id: "p-1", name: "Alex", color: "blue" },
+  { id: "p-2", name: "Sam", color: "red" }
+];
+const threeNamedRows = [...twoNamedRows, { id: "p-3", name: "Jamie", color: "green" }];
+const sixNamedRows = [...threeNamedRows, { id: "p-4", name: "Dee", color: "orange" }, { id: "p-5", name: "Eli", color: "white" }, { id: "p-6", name: "Fran", color: "black" }];
+const sevenNamedRows = [...sixNamedRows, { id: "p-7", name: "Gus", color: "blue" }];
+
+assert.equal(validateRoster(twoNamedRows, "flip-7").valid, false);
+assert.deepEqual(validateRoster(twoNamedRows, "flip-7").errors, ["Add at least 3 players for Flip 7."]);
+assert.equal(validateRoster(threeNamedRows, "flip-7").valid, true);
+assert.equal(validateRoster(sevenNamedRows, "catan").valid, false);
+assert.deepEqual(validateRoster(sevenNamedRows, "catan").errors, ["Keep the table to 6 players or fewer for Catan."]);
+assert.equal(validateRoster(sixNamedRows, "catan").valid, true);
+assert.deepEqual(validateRoster(twoNamedRows).errors, [], "Custom keeps the accepted 2–20 bounds");
+assert.deepEqual(validateRoster([{ name: "Alex", color: "blue" }]).errors, ["Add at least 2 players."], "Custom minimum copy is unchanged");
+assert.equal(validateRoster(twentyOneRows, "unknown-preset").valid, false, "unknown ids fall back to the Custom bounds");
+
+// createGame stores presetId only for a known non-custom preset; Custom,
+// missing, and unknown ids are omitted from the game object.
+const presetGame = createGame({
+  title: "Flip 7 Friday",
+  rows: threeNamedRows,
+  now: new Date("2026-10-18T10:00:00.000Z"),
+  idSeed: "preset",
+  presetId: "flip-7"
+}).game;
+assert.equal(presetGame.presetId, "flip-7");
+assert.equal(presetGame.title, "Flip 7 Friday");
+assert.deepEqual(presetGame.players.map((player) => player.name), ["Alex", "Sam", "Jamie"]);
+
+const customPresetGame = createGame({
+  rows: twoNamedRows,
+  now: new Date("2026-10-18T10:01:00.000Z"),
+  idSeed: "custom-preset",
+  presetId: "custom"
+}).game;
+assert.equal("presetId" in customPresetGame, false, "Custom omits presetId");
+assert.equal("presetId" in game, false, "a missing presetId is omitted");
+const unknownPresetGame = createGame({
+  rows: twoNamedRows,
+  now: new Date("2026-10-18T10:02:00.000Z"),
+  idSeed: "unknown-preset",
+  presetId: "not-a-preset"
+}).game;
+assert.equal("presetId" in unknownPresetGame, false, "unknown preset ids fall back to Custom and are omitted");
+const invalidPresetGame = createGame({
+  rows: twoNamedRows,
+  now: new Date("2026-10-18T10:03:00.000Z"),
+  idSeed: "invalid-preset",
+  presetId: "flip-7"
+});
+assert.equal(invalidPresetGame.game, null, "preset minimums apply during creation");
+assert.deepEqual(invalidPresetGame.validation.errors, ["Add at least 3 players for Flip 7."]);
+
 // playerNumbers (show-player-numbers): badge numbers derive from the roster's
 // setup order at render time — a pure display map keyed by player.id, never
 // persisted anew and never a rank.
@@ -110,4 +167,4 @@ firstNumbers.set("x", 99);
 assert.equal(playerNumbers(numbersInput).get("x"), 1, "mutating a returned Map never affects later derivations");
 assert.deepEqual(numbersInput, numbersSnapshot, "the input game is never mutated");
 
-console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals; blank, non-string, and missing titles store the empty string (no fallback substitution); playerNumbers derives positional 1..N badges with empty-Map guards, skipped corrupt entries, fresh Maps, and input immutability.");
+console.log("Roster tests passed: limits, trimming, duplicate names/colors, IDs, and zero totals; preset-aware min/max validation with the exact preset messages and Custom/unknown fallback; createGame stores presetId only for known non-custom presets and rejects out-of-range preset rosters; blank, non-string, and missing titles store the empty string (no fallback substitution); playerNumbers derives positional 1..N badges with empty-Map guards, skipped corrupt entries, fresh Maps, and input immutability.");

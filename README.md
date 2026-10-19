@@ -31,7 +31,7 @@ Chrome (the default path is the standard macOS installation); set `CHROME_BIN`
 to the browser executable when installed elsewhere.
 
 - `npm run dev`: serve the app locally at `http://127.0.0.1:4173/`.
-- `npm run test`: run roster, standings, score, game, and storage unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, score-distribution, podium-actions, and refine-ui flows.
+- `npm run test`: run roster, standings, score, game, storage, and preset unit checks, HTTP smoke checks, and desktop/mobile browser tests for the roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay, design-system, game-title, game-activity, quick-score, player-number, score-distribution, podium-actions, refine-ui, and preset flows.
 - `npm run test:browser`: run only the Chrome roster interaction checks.
 - `npm run test:browser:score`: run only the Chrome scoring interaction checks.
 - `npm run test:browser:rank`: run only the Chrome leaderboard ranking interaction checks.
@@ -47,11 +47,13 @@ to the browser executable when installed elsewhere.
 - `npm run test:browser:game-activity`: run only the Chrome activity-timestamp and recent-entries checks (relative "Updated" labels, the Recent entries panel, undo context, frozen finished stamps).
 - `npm run test:browser:quick-score`: run only the Chrome quick tap counter and signed stepper checks (shared staged draft, combined Save, focus contract, storage identity).
 - `npm run test:browser:player-numbers`: run only the Chrome player-number badge checks (setup renumbering, badges across every roster surface, rank independence, resume/replay stability, corrupt-marker degradation).
+- `npm run test:browser:presets`: run only the Chrome game-preset checks (six-option picker, preset rosters/titles/limits, title auto-fill, Flip 7 ×2, sign/zero rules, target hints, persistence/resume/replay, back-compatibility, 320px and arrow-key baseline).
 - `npm run test:browser:score-distribution`: run only the Chrome score-distribution checks (share math and rounding invariants, live re-derivation on save/undo/reorder, zero/negative treatment, surface exclusion, responsive and accessibility baseline).
 - `npm run test:browser:refine-ui`: run only the Chrome post-playtest refinement checks (dashboard five-card preview and history dialog, staged counters, row selection, header finish, recent cap, tactile podium steps/ranked summary, finished full width).
 - `npm run test:standings`: run only the ranking unit checks.
 - `npm run test:game`: run only the game-lifecycle (finishGame/replayGame/renameGame) unit checks.
 - `npm run test:storage`: run only the storage unit checks.
+- `npm run test:presets`: run only the preset catalogue/helper unit checks.
 - `./init.sh`: run the standard repository gate without starting a long-running
   server.
 - `CI=true ./init.sh`: run the same gate in CI-style mode.
@@ -133,6 +135,42 @@ title: finished views and their cards show it with no edit control, and **Play
 again** starts the rematch untitled (under its own auto-label) instead of
 copying the original name. Games saved before this feature keep displaying
 their stored titles exactly as saved.
+
+**New game** opens with a six-option **Game preset** picker above the title:
+**Custom** (the default), **Flip 7**, **Catan**, **Ticket to Ride**,
+**7 Wonders**, and **Yahtzee**. Choosing one updates the roster size, player
+limits, title, selected detail, and quick-scoring set together: Flip 7 starts
+with 3 rows (3–20), Catan 4 (3–6), Ticket to Ride 4 (2–5), 7 Wonders 4 (3–7),
+and Yahtzee 4 (2–20). An untouched roster is replaced with the preset's blank
+default rows; a roster you have edited is clamped into the new range, keeping
+the names and colors of the rows that remain (rows beyond a smaller maximum
+are removed; blank rows are appended up to a larger minimum). The status pill,
+Add/Remove enabled states, helper text, and validation use the same preset
+range. Titles auto-fill only when the field is empty or still holds the
+previous preset's auto title, so a title you typed is never overwritten;
+switching back to Custom clears an auto title to empty. Selecting a preset
+returns focus to its radio, and the picker is keyboard-operable with native
+radio arrow keys.
+
+The selected preset travels with the game. **Custom** stores no `presetId`;
+the five named presets store their id, and games saved before presets (or with
+an unknown id) behave exactly like Custom. Preset games resume and reload with
+the same quick actions, sign rules, and hint. The active score panel uses the
+preset's actions in order: Flip 7 shows **×2** before +5/+10/+15/+20/+25/+50,
+Catan +1…+5, Ticket to Ride +1/+5/+10/+15/+20/−5/−10, 7 Wonders
++1/+3/+5/+10/+20, and Yahtzee +5/+10/+25/+30/+40/+50; Custom keeps the signed
+seven. Flip 7's ×2 doubles only the pending draft (12 → ×2 → 24 → +15 → 39),
+never adds to a total or saves by itself, and keeps focus on the control.
+Non-negative presets reject typed negatives with "This preset only adds
+points. Enter a positive amount.", cannot step below 0, expose `min="0"`, and
+render no negative quick action; Custom and Ticket to Ride still accept signed
+scores. Zero remains invalid for every preset — a bust Flip 7 round or an empty
+Yahtzee category is simply not entered — with the positive-only zero wording
+for non-negative presets and the signed wording for Custom/Ticket to Ride.
+Flip 7's 200-point target and Catan's 10 VP target appear only as hints: they
+never finish a game, disable scoring, or open the podium. **Play again** copies
+a valid preset but still starts untitled; Custom/old/unknown games replay
+without a preset, and finished originals stay unchanged.
 
 The dashboard hero no longer carries the old "Local to this browser" pill;
 the retention note under the unfinished list still explains that games live
@@ -270,6 +308,8 @@ seven v2 features (`refresh-design-system`, `name-game-titles`,
 `show-score-distribution`, and `extend-podium-actions`) are accepted and
 merged, and the post-playtest refinement batch (`refine-ui-after-testing`) is
 accepted and merged. `refine-podium-and-history-modal` (tactile podium plus the
-Dashboard history dialog) is implemented and awaiting independent validation.
-Any further scope (rounds/timers, dashboard statistics, presets, roster reuse,
-one-tap games) needs a new agreed feature first.
+Dashboard history dialog) is accepted and merged. `game-presets` (the fixed
+six-option setup catalogue, preset scoring, persistence, and replay) is
+implemented and awaiting independent validation. Any further scope
+(rounds/timers, dashboard statistics, user-defined presets or a wider game
+catalog, roster reuse, one-tap games) needs a new agreed feature first.

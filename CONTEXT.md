@@ -11,6 +11,7 @@ These terms describe the agreed scoring workflow.
 - **Finished game**: a saved, read-only game with final standings.
 - **Play again**: create a separate game with the same players and zero scores.
 - **Game title**: optional editable label for a game. Shown on cards and headers; when blank, an auto date-based label is displayed instead.
+- **Game preset**: one of the fixed approved setups — Custom, Flip 7, Catan, Ticket to Ride, 7 Wonders, or Yahtzee — that supplies setup player bounds/defaults, a default title, quick-scoring actions, a sign policy, and informational target/hint text. Custom is the fallback when no valid preset is stored.
 - **Player number**: the player's position in setup order (1–20), shown as a badge. A display aid for repeated colors or names; not part of player identity.
 - **Recent entries**: the active game's logged score changes, shown newest first with relative timestamps.
 - **Score distribution**: a stacked bar showing each player's share of the game's accumulated points.

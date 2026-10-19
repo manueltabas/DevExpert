@@ -721,6 +721,117 @@ h3 {
   margin-bottom: 22px;
 }
 
+/* Game preset picker (game-presets): native radios rendered as selectable
+   cards above the title, plus the polite selected detail and hint chips. All
+   rules are additive and use the existing token language. */
+.preset-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.preset-picker legend {
+  padding: 0;
+}
+
+.preset-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.preset-card {
+  position: relative;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-md);
+  font-size: var(--text-label-md);
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.preset-card input {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  opacity: 0;
+}
+
+.preset-card:has(input:checked) {
+  color: var(--text);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(8, 104, 201, 0.16);
+}
+
+.preset-card:has(input:focus-visible) {
+  outline: 3px solid var(--primary-dark);
+  outline-offset: 3px;
+}
+
+.preset-detail {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  background: var(--surface-container);
+  border: 1px solid var(--border-cool);
+  border-radius: 14px;
+}
+
+.preset-detail p {
+  margin: 0;
+}
+
+.preset-detail-range {
+  color: var(--text);
+  font-size: var(--text-label-md);
+  font-weight: 700;
+}
+
+.preset-detail-target {
+  color: var(--primary-dark);
+  font-size: var(--text-label-md);
+  font-weight: 700;
+}
+
+.preset-detail-hint {
+  color: var(--muted);
+  font-size: var(--text-body-sm);
+}
+
+.preset-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.preset-chip {
+  min-width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-cool);
+  border-radius: var(--radius-full);
+  font-size: var(--text-label-sm);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.preset-chip.is-multiply {
+  border-color: var(--primary);
+}
+
 .roster-form {
   display: grid;
   gap: var(--space-md);
@@ -1080,7 +1191,28 @@ h3 {
 
 .quick-scores-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+/* Preset quick actions may contain up to seven controls (Flip 7 ×2 + six
+   additions); the 44px flex basis wraps them without shrinking targets or
+   overflowing at 320px. */
+.preset-quick-scores .quick-score-action {
+  flex: 1 1 44px;
+  min-width: 44px;
+}
+
+.quick-score-action.is-multiply {
+  background: var(--primary-fixed);
+  border-color: var(--primary);
+}
+
+/* The score panel hint is informational (targets never finish a game). */
+.preset-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-body-sm);
 }
 
 .quick-score-action {
@@ -1774,6 +1906,10 @@ h3 {
 }
 
 @media (max-width: 480px) {
+  .preset-options {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .saved-game {
     grid-template-columns: minmax(0, 1fr);
   }

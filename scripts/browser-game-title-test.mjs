@@ -702,13 +702,17 @@ async function runResponsiveKeyboard(cdp, { consoleProblems }) {
   await navigate(cdp, baseUrl);
   await waitForSelector(cdp, "[data-action='new-game']");
 
-  // The setup title field is reachable in the accepted Tab order: the nav's
-  // New Game lands focus on the setup heading, and one Tab reaches the field.
+  // Superseded by game-presets: the nav's New Game lands focus on the setup
+  // heading, the next Tab enters the checked preset radio, and a second Tab
+  // reaches the title field (the picker sits above the title).
   await click(cdp, "[data-action='nav-new-game']");
   await waitForSelector(cdp, "#game-title");
   await pressTab(cdp);
+  const reachedRadio = await evaluate(cdp, () => document.activeElement?.id ?? document.activeElement?.className ?? "");
+  assert.equal(reachedRadio, "game-preset-custom", "Tab must enter the checked preset radio from the setup heading");
+  await pressTab(cdp);
   const reached = await evaluate(cdp, () => document.activeElement?.id ?? document.activeElement?.className ?? "");
-  assert.equal(reached, "game-title", "Tab must reach the setup title field from the setup heading");
+  assert.equal(reached, "game-title", "a second Tab must reach the setup title field");
   const mobileSetup = await readSetupState(cdp);
   assert.equal(mobileSetup.value, "");
   assert.equal((await readHomeOverflow(cdp)), false, "setup must not overflow at 320px");
@@ -807,7 +811,7 @@ async function main() {
     const responsive = await runSession("responsive-keyboard", runResponsiveKeyboard);
     assert.equal(typeof responsive.displayScreenshot, "string");
 
-    console.log("Browser game-title test passed: the setup title field starts empty (label 'Game title', optional placeholder, maxlength 60) with nav New Game preserving the draft and hero/empty-state New game resetting it; a titled game renders the stored title verbatim on the active header, cards, accessible names, and the new muted podium title line (podium-title/podium-lede copy untouched), while blank, whitespace-only, and missing titles store \"\"/nothing and render the deterministic 'Game — {d MMM, HH:mm}' auto-label derived from createdAt (plain 'Game' for unusable stamps) that is stable across reloads and never written to storage; Edit title opens an inline labeled form focused on the input (Save title/Cancel >=44px, polite feedback region) where Save/Enter persist the trimmed title with a fresh updatedAt through the unchanged snapshot save (focus back on the heading), Cancel and Escape close with byte-identical storage, clearing to blank restores the auto-label, blocked writes keep the in-memory rename with the accepted role=status notice and code-only warnings, finished views freeze the title with no edit control, replays start untitled with the finished original byte-identical, pre-feature records render stored titles verbatim, and at 1280x800 and 320x720 nothing overflows while a real-keyboard Tab/Enter/type/Enter walk renames the game with visible focus.");
+    console.log("Browser game-title test passed: the setup title field starts empty (label 'Game title', optional placeholder, maxlength 60) with nav New Game preserving the draft and hero/empty-state New game resetting it; a titled game renders the stored title verbatim on the active header, cards, accessible names, and the new muted podium title line (podium-title/podium-lede copy untouched), while blank, whitespace-only, and missing titles store \"\"/nothing and render the deterministic 'Game — {d MMM, HH:mm}' auto-label derived from createdAt (plain 'Game' for unusable stamps) that is stable across reloads and never written to storage; Edit title opens an inline labeled form focused on the input (Save title/Cancel >=44px, polite feedback region) where Save/Enter persist the trimmed title with a fresh updatedAt through the unchanged snapshot save (focus back on the heading), Cancel and Escape close with byte-identical storage, clearing to blank restores the auto-label, blocked writes keep the in-memory rename with the accepted role=status notice and code-only warnings, finished views freeze the title with no edit control, replays start untitled with the finished original byte-identical, pre-feature records render stored titles verbatim, and at 1280x800 and 320x720 nothing overflows while the setup Tab order is heading → checked preset radio → title and a real-keyboard Tab/Enter/type/Enter walk renames the game with visible focus.");
     console.log(`Browser evidence screenshots: ${[
       titled.setupScreenshot,
       titled.titledPodiumScreenshot,

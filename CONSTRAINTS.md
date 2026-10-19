@@ -126,20 +126,28 @@
   through any path.
 - Quick entry controls (the mocked-up refinement supersedes immediate counter
   apply) stage one shared points draft, never a second pipeline and never new
-  state or storage: the preset set stays locked to the mockup's seven (+1, +5,
-  +10, +25, −1, −5, −10). Both the counters and the − / + stepper call one
+  state or storage. Custom keeps the mockup's seven (+1, +5, +10, +25, −1, −5,
+  −10); preset games render their fixed `game-presets` catalogue actions
+  instead (Flip 7 adds a draft-only ×2; Catan, 7 Wonders, and Yahtzee render
+  positive-only sets; Ticket to Ride keeps the signed seven minus the ±1
+  pair per its catalogue). Both adds and the − / + stepper call one
   `applyDraftDelta(delta)` helper that reads `#score-amount` with
-  `parseInt` (0 baseline for empty/unparseable drafts), adds the delta, clamps
-  to ±1,000,000, and writes plain integer text. A tap or step must never
-  render, paint feedback, re-rank, log a recent entry, or save; focus must
-  stay on the pressed control. Save points then applies the combined draft
-  through the unchanged `handleScoreSubmit` as exactly one ordinary change
-  (one change-log entry, one `persistActiveGameSnapshot()` save — still
-  exactly six call sites), inheriting the accepted messages, undo semantics,
-  and storage rules. Counter controls must never submit the form
-  (`type="button"`) and must expose `Add {n} point(s) to the points draft for
-  {name}` (signed amount, correct pluralization); visible `+1 … -10` labels
-  stay unchanged.
+  `parseInt` (0 baseline for empty/unparseable drafts), applies the preset
+  floor (0 for non-negative presets, so a typed negative baseline is treated as
+  0 for the next step/action), adds the delta, clamps, and writes plain
+  integer text. `handleMultiplyDraft(factor)` only multiplies the current draft
+  (same read/floor/clamp rules), never adds to a total, renders, saves, or
+  moves focus. A tap, step, or ×2 must never render, paint feedback, re-rank,
+  log a recent entry, or save; focus must stay on the pressed control. Save
+  points then applies the combined draft through the unchanged
+  `handleScoreSubmit` as exactly one ordinary change (one change-log entry,
+  one `persistActiveGameSnapshot()` save — still exactly six call sites),
+  inheriting the accepted messages, undo semantics, and storage rules. Counter
+  controls must never submit the form (`type="button"`) and must expose
+  `Add {n} point(s) to the points draft for {name}` (signed amount, correct
+  pluralization); visible `+1 … -10` labels stay unchanged, and the multiplier
+  is labeled `×2` with accessible name
+  `Double the points draft for {name}`.
 - Leaderboard ranks are competition ranks derived at render time from player
   totals: `rank = 1 +` the number of strictly higher totals, so equal totals
   share a rank and the next position skips (12, 12, 8 → 1, 1, 3). Tied players
@@ -330,3 +338,46 @@
   `aria-pressed` target; rows gain no `tabindex` or role. Finished rows are
   inert: no listener, no pointer cursor, no selection or highlight change.
   The `.is-selected` treatment stays byte-identical.
+- Game presets are a fixed catalogue, not a user-defined system:
+  `src/presets.js` is the only source (`custom`, `flip-7`, `catan`,
+  `ticket-to-ride`, `7-wonders`, `yahtzee` in picker order) and every consumer
+  resolves through `getPreset`, whose universal fallback maps missing, null,
+  `"custom"`, and unknown ids to Custom. `normalizePresetId` returns only known
+  non-custom ids (else `null`). Do not duplicate preset data in `main.js`, add
+  presets, allow per-game action editing, or add a wider catalog without a new
+  agreed feature.
+- The optional stored `presetId` is the only new persisted field: `createGame`
+  stores a known non-custom id and omits it for Custom/unknown/missing input.
+  `finishGame`/`renameGame` preserve it through their spreads; `storage.js`
+  and the version-1 envelope stay unchanged; pre-feature records and unknown
+  ids never get a load-time rewrite. Replay passes `presetId` through
+  `createGame` (valid non-custom copied, Custom/unknown omitted) while still
+  storing `title: ""`; finished originals stay byte-identical.
+- Setup preset behavior: untouched rosters (`state.rosterTouched === false`)
+  are replaced with the preset's `defaultPlayers`; touched rosters clamp into
+  `[minPlayers, maxPlayers]` by truncating only trailing rows or appending
+  blank rows with fresh ids and positional colors, preserving retained
+  names/colors literally. Only name input, color change, Add player, and
+  Remove player set `rosterTouched`; preset-driven resizing must never set it.
+  A full reset returns to Custom with two empty rows and focuses
+  `#game-preset-custom`; nav New Game preserves the scratchpad and focuses the
+  setup heading, whose next Tab enters the checked radio and then the title.
+  Preset selection clears setup feedback, re-renders, and returns focus to the
+  selected radio. Status pill, Add/Remove disabled states, helper text,
+  `limitMessage`, and `validateRoster` all use the resolved range; Custom keeps
+  the accepted 2–20 copy and messages.
+- Title auto-fill must never overwrite a user title: a preset switch writes
+  the default title only when the field is empty/whitespace or still holds a
+  preset-written title (`state.titleAutoFilled`); any title input clears that
+  flag until the field is blanked again. The flag is scratchpad-only and never
+  persisted.
+- Non-negative presets (Flip 7, Catan, 7 Wonders, Yahtzee) reject saves with
+  `negative-not-allowed` and the copy
+  `This preset only adds points. Enter a positive amount.` only after the
+  accepted player/integer/zero/range gates; zero keeps the `zero` code for
+  every preset (positive-only copy for non-negative presets, the accepted
+  positive-or-negative copy for Custom/Ticket to Ride). Their input exposes
+  `min="0"`, the stepper/draft floor is 0, and no negative quick action
+  renders. Custom/Ticket to Ride keep signed behavior. No zero quick action
+  may exist, and targets (`Target 200 points`, `Target 10 VP`) are hints only:
+  they must never finish a game, disable scoring, or open the podium.

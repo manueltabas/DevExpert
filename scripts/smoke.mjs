@@ -21,6 +21,7 @@ try {
 
   await assertOk(`${baseUrl}src/styles.css`, "CSS should load over HTTP");
   await assertOk(`${baseUrl}src/main.js`, "JavaScript module should load over HTTP");
+  await assertOk(`${baseUrl}src/presets.js`, "Presets module should load over HTTP");
   await assertOk(`${baseUrl}src/roster.js`, "Roster module should load over HTTP");
   await assertOk(`${baseUrl}src/score.js`, "Score module should load over HTTP");
   await assertOk(`${baseUrl}src/standings.js`, "Standings module should load over HTTP");

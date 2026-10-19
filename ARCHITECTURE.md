@@ -15,9 +15,21 @@ accepted system stack as the declared fallback; no font files are committed, no
 Tailwind, no icon fonts, no build step. The one suite-frozen token value is
 `--muted: #6D655C`, kept because the undo suite asserts the info-feedback
 color `rgb(109, 101, 92)` exactly.
-State lives in memory in the browser module. `src/roster.js` contains pure
-roster validation and game creation helpers plus the `playerNumbers(game)`
-display derivation: a `Map` keyed by `player.id` → the player's 1-based
+State lives in memory in the browser module. `src/presets.js` is the
+dependency-free leaf catalogue behind the setup picker: a frozen six-record
+array in picker order (`custom`, `flip-7`, `catan`, `ticket-to-ride`,
+`7-wonders`, `yahtzee`) whose records carry `id`, `label`, `minPlayers`,
+`maxPlayers`, `defaultPlayers`, `defaultTitle`, `allowsNegative`,
+`quickActions` (`{ type: "add", amount }` or `{ type: "multiply", factor: 2 }`),
+`target`, `setupHint`, and `scoreHint`. `getPreset` is the universal fallback
+(missing/null/Custom/unknown → Custom), `normalizePresetId` returns only known
+non-custom ids (else `null`), `allowsNegative` resolves the sign policy, and
+`resolvePlayerCount` returns the preset default for untouched rosters or clamps
+a touched count into the range. No preset logic is duplicated in `main.js`.
+`src/roster.js` contains pure preset-aware roster validation and game creation
+helpers — `validateRoster(rows, presetId)` enforces the resolved bounds with
+Custom's accepted copy, and `createGame` stores `presetId` only for a known
+non-custom preset — plus the `playerNumbers(game)` display derivation: a `Map` keyed by `player.id` → the player's 1-based
 position in `game.players` (the setup order), with guards returning an empty
 `Map` for non-object games and non-array players and non-object player
 entries skipped without consuming a position. `src/score.js` contains pure
@@ -28,7 +40,11 @@ finite/integer/zero/range checks, so exact-integer non-plain text such as
 saving — plus `applyScoreChange`, which updates
 one player's total and appends `{ id, playerId, amount, at }` to the in-memory
 `game.changes` log (each entry stamped `at: now.toISOString()` from the
-injectable clock, so per-entry ages survive reloads), `undoLastScoreChange`,
+injectable clock, so per-entry ages survive reloads); after the accepted
+player/integer/zero/range checks it rejects a negative amount with the
+`negative-not-allowed` code when `getPreset(game?.presetId)` disallows
+negatives, so zero keeps its own code for every preset and unknown ids fall
+back to signed Custom behavior. `undoLastScoreChange`,
 which pops the newest log entry, restores that player's total, and returns a
 new game object without mutating the input, and `recentScoreChanges`, the pure
 view behind the Recent entries panel: the newest `RECENT_ENTRIES_LIMIT` (5)
@@ -55,6 +71,30 @@ non-array players; the input is never mutated and each call returns a fresh
 array.
 `src/main.js` calls all three at render time only; no rank, share, or
 distribution field is stored on players, games, or the change log.
+
+Setup and active scoring are preset-aware. `state.presetId` (`"custom"` by
+default), `state.rosterTouched`, and `state.titleAutoFilled` are setup-only
+scratchpad state reset by `resetSetup` and preserved by nav New Game.
+`renderSetup` places the six-card native-radio picker above the title, then the
+polite selected detail (range, target, hints, non-interactive quick-action
+preview), and drives the status pill, Add/Remove disabled states, helper text,
+and `validateRoster` from `getPreset(state.presetId)`. `selectPreset` replaces
+an untouched roster with `createSetupRows(defaultPlayers)` or clamps a touched
+roster with `resolvePlayerCount` (truncating only trailing rows, appending
+blank rows with fresh ids and positional colors), auto-fills only an empty or
+auto-filled title, clears feedback, re-renders, and returns focus to the chosen
+radio; only name/color/Add/Remove interactions set `rosterTouched`, and only a
+title input clears `titleAutoFilled`. A full reset (hero or active-empty New
+game) lands focus on `#game-preset-custom`; nav New Game keeps focusing the
+setup heading, whose next Tab enters the checked radio and then the title.
+The active view resolves `getPreset(game.presetId)`, renders the catalogue's
+ordered multiplier/positive/negative quick actions (multiplier first, empty
+rows omitted), sets the input `min` (`0` for non-negative presets), the helper
+and optional `.preset-hint` (target + score hint, included in
+`aria-describedby`), and clamps the shared draft/steps and ×2 to the preset
+floor. `handleMultiplyDraft` only multiplies the draft; Save points remains the
+single ordinary score path, with preset-aware zero and `negative-not-allowed`
+copy.
 
 `src/storage.js` contains the pure persistence helpers behind the single
 versioned storage key `scorekeeper:games`, which holds a
@@ -101,9 +141,12 @@ maps the finished roster back to roster rows, and calls `createGame` with the
 (`replay-game-*` ids can never collide with setup-created `active-game-*`
 ids). It copies only presentation (names, colors, markers, and the
 creation order, restoring atypical-but-valid stored values literally with
-regenerated fallbacks) while every total restarts at zero and no change log,
-`updatedAt`, or title carries over — replays always start untitled
-(`title: ""`); the input game is never mutated. `renameGame` is the one pure
+regenerated fallbacks) and passes the source `presetId` into `createGame`, so
+a valid non-custom preset is copied (Custom/unknown sources omit the field)
+while every total restarts at zero and no change log, `updatedAt`, or title
+carries over — replays always start untitled (`title: ""`); the input game is
+never mutated and `finishGame`/`renameGame` preserve `presetId` through their
+spread. `renameGame` is the one pure
 title mutation: it accepts only an active game (any other status reports
 `already-finished` — finished titles are frozen), rejects non-string titles
 (`invalid-title`) and trimmed titles over `MAX_TITLE_LENGTH` (60) characters
@@ -274,11 +317,12 @@ persistence slice is implemented.
 
 - `npm run dev`: starts the local static HTTP server at `http://127.0.0.1:4173/`
   unless `HOST` or `PORT` is set.
-- `npm run test`: runs roster, standings, score, game, and storage unit checks, HTTP
-  smoke checks, and Chrome browser interaction checks for the roster, scoring,
-  leaderboard, undo, save/resume, storage-failure, finish-game, podium, replay,
-  design-system, game-title, game-activity, quick-score, player-number,
-  score-distribution, podium-actions, and refine-ui flows.
+- `npm run test`: runs roster, standings, score, game, storage, and preset unit
+  checks, HTTP smoke checks, and Chrome browser interaction checks for the
+  roster, scoring, leaderboard, undo, save/resume, storage-failure, finish-game,
+  podium, replay, design-system, game-title, game-activity, quick-score,
+  player-number, score-distribution, podium-actions, refine-ui, and preset
+  flows.
 - `./init.sh` and `CI=true ./init.sh`: run the standard non-blocking gate and
   exit without starting the development server.
 
@@ -288,7 +332,10 @@ persistence slice is implemented.
   font links) and app mount point.
 - `src/main.js`: renders home/setup/active views (with the read-only finished
   variant, its Play again control, the podium celebration modal, and the
-  `active-empty` Active Game destination empty state), binds the one-time top
+  `active-empty` Active Game destination empty state), including the
+  six-card preset picker/detail, preset-aware roster/title selection, the
+  preset-scored active panel (catalogue quick actions, ×2, sign floor, hint),
+  and the setup focus contract; binds the one-time top
   navigation handlers and paints `aria-current` per view, handles
   form events, and wires score entry, selection, live totals, feedback, the
   undo-last-score control, the finish-game confirmation, the home Finished
@@ -310,15 +357,21 @@ persistence slice is implemented.
    (`podium-play-again` delegating to the unchanged `handlePlayAgain` after a
    guarded `dialog.close()`, the unchanged `close-podium` dismiss funnel, and
    `handlePodiumExitDashboard()` as a write-free back-home navigation).
-- `src/roster.js`: roster limits, colors, validation, identities, and
-  zero-score game creation with the trimmed optional title (`""` when blank
-  or non-string) and the `MAX_TITLE_LENGTH` cap, plus the `playerNumbers`
-  positional badge derivation (pure, id-keyed, render-time only).
+- `src/presets.js`: dependency-free frozen six-preset catalogue in picker
+  order with `getPreset` Custom fallback, `normalizePresetId`,
+  `allowsNegative`, and `resolvePlayerCount`.
+- `src/roster.js`: roster limits, colors, preset-aware validation against the
+  resolved range, identities, and zero-score game creation with the trimmed
+  optional title (`""` when blank or non-string), the `MAX_TITLE_LENGTH` cap,
+  and a stored `presetId` only for known non-custom presets, plus the
+  `playerNumbers` positional badge derivation (pure, id-keyed, render-time
+  only).
 - `src/score.js`: score-change bounds, plain signed integer parsing (the
   `isPlainScoreDraft` entry pattern and the final plain-format gate in
-  `parseScoreAmount`), safe-integer guarded application, per-change `at`
-  stamps from the injectable clock, latest-change undo, the in-memory change
-  log, and the `recentScoreChanges` panel view with `RECENT_ENTRIES_LIMIT`.
+  `parseScoreAmount`), the preset `negative-not-allowed` guard, safe-integer
+  guarded application, per-change `at` stamps from the injectable clock,
+  latest-change undo, the in-memory change log, and the `recentScoreChanges`
+  panel view with `RECENT_ENTRIES_LIMIT`.
 - `src/standings.js`: pure leaderboard ranking: descending totals, shared
   competition ranks, and deterministic creation-order ties via `player.order`,
   the podium-eligibility filter `podiumRows` (every rank ≤ 3 row, ties
@@ -350,7 +403,11 @@ persistence slice is implemented.
   or arbitrary paths under the project root.
 - `scripts/serve.mjs`: long-running local server for manual browser use.
 - `scripts/smoke.mjs`: non-blocking HTTP smoke check for the baseline shell.
-- `scripts/roster-test.mjs`: pure roster behavior checks.
+- `scripts/presets-test.mjs`: pure preset catalogue/helper checks (order,
+  metadata, frozen records, fallback, normalization, sign policy, roster
+  count resolution).
+- `scripts/roster-test.mjs`: pure roster behavior checks, including
+  preset-aware bounds/messages and stored-only-non-custom `presetId`.
 - `scripts/standings-test.mjs`: pure leaderboard ranking checks.
 - `scripts/score-test.mjs`: pure scoring behavior checks.
 - `scripts/game-test.mjs`: pure game-lifecycle (finishGame and replayGame) checks.
@@ -465,6 +522,17 @@ persistence slice is implemented.
    1280x800 and 320x720), the
    corner dismissal path, and the single-track full-width finished layout —
    using isolated headless Chrome.
+- `scripts/browser-presets-test.mjs`: desktop/mobile preset checks — the six
+  approved options above the title with Custom default and detail previews;
+  per-preset roster/title/limits/quick actions and targets; title ownership
+  and touched-roster append/truncate; version-1 persistence with `presetId`
+  only for non-custom games plus reload/resume; Flip 7's locked
+  12→×2→24→+15→39→Save, draft-only multiplier, target non-auto-finish, and
+  sign/stepper/zero rules; pre-feature/unknown Custom fallback, preset replay
+  copied-but-untitled with byte-identical originals, and Custom replay
+  omission; the scratchpad/reset contract; and the 320px two-column picker,
+  arrow-key selection, 44px targets, and no-overflow baseline — using isolated
+  headless Chrome.
 - `scripts/browser-player-numbers-test.mjs`: desktop/mobile player-number
    badge checks — positional setup rows that renumber on removal with the
    accepted positional labels; badges 1..N in setup order on the leaderboard,
@@ -646,3 +714,22 @@ name and percent as real text beside an aria-hidden color dot, the bar is
 `aria-hidden`, and the block contains no focusable elements and no live
 region of its own — `#score-feedback` remains the sole announcer for saves
 and undoes.
+
+Game presets are a fixed, data-driven setup and scoring layer, not a
+user-editable system. `src/presets.js` is the only catalogue and every
+consumer resolves through `getPreset`, so missing, Custom, pre-feature, and
+unknown ids all degrade to the signed Custom behavior without rewriting stored
+data. The optional `presetId` is the only new persisted field and appears only
+on known non-custom games; the envelope stays version 1, `src/storage.js` is
+unchanged, and `finishGame`/`renameGame` preserve the id by spreading.
+Replay passes the source id through `createGame` (which normalizes/omits) while
+still starting untitled, and finished originals stay byte-identical. Setup
+resizing is scratchpad-only: untouched rosters take the preset default, touched
+rosters clamp into range preserving retained rows, and preset-driven resizing
+never sets `rosterTouched`. Title auto-fill is in-memory only and never
+overwrites a user title. Scoring actions, the draft floor/×2, the input `min`,
+helper text, and hints all derive from the same resolved preset; targets are
+informational and can never finish a game, disable scoring, or open the
+podium. Non-negative presets reject saves with `negative-not-allowed` after
+the accepted gates, zero remains invalid everywhere, and no zero quick action
+exists.
